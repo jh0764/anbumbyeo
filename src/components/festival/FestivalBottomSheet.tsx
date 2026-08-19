@@ -1,0 +1,261 @@
+'use client';
+
+import { useState } from 'react';
+import { Festival, Parking } from '@/types';
+import {
+  MapPin,
+  Calendar,
+  Car,
+  Users,
+  ChevronUp,
+  ChevronDown,
+  Navigation,
+  ArrowUpDown,
+  X,
+  ExternalLink,
+  ShieldAlert,
+} from 'lucide-react';
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export type BottomSheetMode = 'collapsed' | 'half' | 'full';
+
+interface FestivalBottomSheetProps {
+  festival: Festival | null;
+  mode: BottomSheetMode;
+  onModeChange: (mode: BottomSheetMode) => void;
+}
+
+export default function FestivalBottomSheet({
+  festival,
+  mode,
+  onModeChange,
+}: FestivalBottomSheetProps) {
+  const [sortOrder, setSortOrder] = useState<'distance' | 'available'>('distance');
+
+  if (!festival || mode === 'collapsed') {
+    return null;
+  }
+
+  // 주차장 정렬
+  const sortedParkingLots = [...festival.parkingLots].sort((a, b) => {
+    if (sortOrder === 'distance') {
+      return a.distanceMeters - b.distanceMeters;
+    } else {
+      return b.availableSpaces - a.availableSpaces;
+    }
+  });
+
+  const displayedParkingLots = mode === 'half' ? sortedParkingLots.slice(0, 2) : sortedParkingLots;
+
+  const getCrowdBadgeStyle = (level: string) => {
+    switch (level) {
+      case '매우 혼잡':
+        return 'bg-red-100 text-red-700 border-red-200';
+      case '혼잡':
+        return 'bg-amber-100 text-amber-700 border-amber-200';
+      case '보통':
+        return 'bg-blue-100 text-blue-700 border-blue-200';
+      default:
+        return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    }
+  };
+
+  const handleOpenKakaoMap = (parking: Parking) => {
+    const query = encodeURIComponent(`${parking.name}`);
+    window.open(`https://map.kakao.com/link/search/${query}`, '_blank');
+  };
+
+  return (
+    <div
+      className={twMerge(
+        'absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-[0_-6px_25px_rgba(0,0,0,0.18)] transition-all duration-300 ease-out flex flex-col',
+        mode === 'full' ? 'h-[82vh]' : 'h-[46vh]'
+      )}
+    >
+      {/* 바텀시트 상단 드래그 & 컨트롤 핸들 */}
+      <div className="w-full py-2.5 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 rounded-t-3xl border-b border-slate-100 shrink-0 relative">
+        <div
+          onClick={() => onModeChange(mode === 'full' ? 'half' : 'full')}
+          className="w-full flex flex-col items-center justify-center py-1"
+        >
+          <div className="w-12 h-1.5 bg-slate-300 rounded-full mb-1" />
+          <div className="flex items-center text-xs font-bold text-slate-500 gap-1">
+            {mode === 'full' ? (
+              <>
+                <span>요약 보기</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </>
+            ) : (
+              <>
+                <span>전체 공영주차장 보기</span>
+                <ChevronUp className="w-3.5 h-3.5" />
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 닫기 버튼 */}
+        <button
+          onClick={() => onModeChange('collapsed')}
+          className="absolute right-4 top-3 p-1.5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+          title="닫기"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* 바텀시트 스크롤 본문 */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* 축제 타이틀 & 실시간 인파 상태 */}
+        <div>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100 inline-block mb-1">
+                {festival.region} · {festival.category}
+              </span>
+              <h2 className="text-xl font-black text-slate-900 leading-snug">
+                {festival.title}
+              </h2>
+            </div>
+            <div
+              className={clsx(
+                'px-3 py-1 rounded-xl text-xs font-extrabold border shrink-0 flex items-center gap-1.5 shadow-2xs',
+                getCrowdBadgeStyle(festival.crowdLevel)
+              )}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{festival.crowdLevel}</span>
+            </div>
+          </div>
+
+          <div className="mt-2.5 space-y-1 text-xs text-slate-600">
+            <div className="flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="font-medium">{festival.locationName} ({festival.address})</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="font-medium">{festival.period}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 실시간 혼잡도 안내 카드 */}
+        <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200/80 flex items-start gap-3">
+          <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
+            <ShieldAlert className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-amber-900">실시간 인파 혼잡도 안내</h4>
+            <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+              {festival.crowdMessage}
+            </p>
+          </div>
+        </div>
+
+        {/* 공영주차장 실시간 잔여 현황 세션 */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+              <Car className="w-4.5 h-4.5 text-indigo-600" />
+              <span>주변 공영주차장 실시간 잔여</span>
+            </h3>
+
+            {/* 정렬 토글 버튼 */}
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
+              <button
+                onClick={() => setSortOrder('distance')}
+                className={clsx(
+                  'px-2 py-1 rounded-md transition-all',
+                  sortOrder === 'distance'
+                    ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
+                    : 'text-slate-500 hover:text-slate-800'
+                )}
+              >
+                거리순
+              </button>
+              <button
+                onClick={() => setSortOrder('available')}
+                className={clsx(
+                  'px-2 py-1 rounded-md transition-all',
+                  sortOrder === 'available'
+                    ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
+                    : 'text-slate-500 hover:text-slate-800'
+                )}
+              >
+                잔여석순
+              </button>
+            </div>
+          </div>
+
+          {/* 주차장 카드리스트 */}
+          <div className="space-y-2.5">
+            {displayedParkingLots.map((parking) => {
+              const isFull = parking.availableSpaces === 0;
+              return (
+                <div
+                  key={parking.id}
+                  className="p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                      {parking.name}
+                    </h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <Navigation className="w-3 h-3 text-slate-400" />
+                        {parking.distance}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div
+                      className={clsx(
+                        'text-xs font-bold px-2.5 py-1.5 rounded-xl text-center',
+                        isFull
+                          ? 'bg-slate-100 text-slate-400'
+                          : parking.availableSpaces < 10
+                          ? 'bg-orange-100 text-orange-700'
+                          : 'bg-indigo-50 text-indigo-700'
+                      )}
+                    >
+                      {isFull ? (
+                        <span className="font-extrabold">만차</span>
+                      ) : (
+                        <>
+                          <span className="text-[10px] text-slate-500 font-medium block">잔여</span>
+                          <span className="text-sm font-black">{parking.availableSpaces}</span>
+                          <span className="text-[10px] font-medium text-slate-400">/{parking.totalSpaces}</span>
+                        </>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleOpenKakaoMap(parking)}
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 transition-colors"
+                      title="길찾기"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {mode === 'half' && festival.parkingLots.length > 2 && (
+              <button
+                onClick={() => onModeChange('full')}
+                className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 border border-slate-200"
+              >
+                <span>전체 주차장 {festival.parkingLots.length}곳 모두 보기</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
