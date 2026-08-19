@@ -5,8 +5,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking } from '@/types';
+import { Compass, LocateFixed, Plus, Minus } from 'lucide-react';
 
-// Leaflet 기본 아이콘 이슈 방지
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 
 L.Icon.Default.mergeOptions({
@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// 커스텀 축제 마커 아이콘
+// 축제 커스텀 핀
 const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
   let bgColor = 'bg-emerald-500';
   let borderColor = 'border-emerald-700';
@@ -31,7 +31,7 @@ const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
     borderColor = 'border-blue-700';
   }
 
-  const scale = isSelected ? 'scale-125 z-50 ring-4 ring-white/80' : 'hover:scale-110';
+  const scale = isSelected ? 'scale-125 z-50 ring-4 ring-white/90 shadow-2xl' : 'hover:scale-110';
 
   const html = `
     <div class="relative flex items-center justify-center transition-all duration-200 ${scale}">
@@ -51,15 +51,22 @@ const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
   });
 };
 
-// 커스텀 주차장 마커 아이콘
+// 고도화된 주차장 커스텀 핀 (0면: 빨강, 1~5면: 주황, 6면 이상: 초록)
 const createParkingIcon = (available: number) => {
-  const isFull = available === 0;
-  const bgColor = isFull ? 'bg-slate-700' : available < 10 ? 'bg-orange-500' : 'bg-indigo-600';
+  let bgColor = 'bg-emerald-600';
+  let badgeText = `${available}면`;
+
+  if (available === 0) {
+    bgColor = 'bg-red-500';
+    badgeText = '만차';
+  } else if (available <= 5) {
+    bgColor = 'bg-amber-500';
+  }
 
   const html = `
-    <div class="flex items-center gap-1 px-2.5 py-1 rounded-full ${bgColor} text-white text-xs font-extrabold shadow-lg border-2 border-white">
+    <div class="flex items-center gap-1 px-2.5 py-1 rounded-full ${bgColor} text-white text-xs font-extrabold shadow-lg border-2 border-white transition-transform hover:scale-105">
       <span>P</span>
-      <span class="bg-white/20 px-1 rounded text-[11px] font-bold">${available}면</span>
+      <span class="bg-white/20 px-1 rounded text-[11px] font-bold">${badgeText}</span>
     </div>
   `;
 
@@ -72,13 +79,43 @@ const createParkingIcon = (available: number) => {
   });
 };
 
-// 지도의 중심점을 변경하는 내부 컨트롤러
+// 지도의 중심점 조절 및 우측 하단 컨트롤러 컴포넌트
 function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
+
   useEffect(() => {
     map.flyTo(center, zoom, { duration: 1.2, animate: true });
   }, [center, zoom, map]);
-  return null;
+
+  return (
+    <div className="absolute bottom-28 right-3 z-10 flex flex-col gap-2">
+      {/* 줌 인/아웃 및 위치 재정렬 버튼 */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 p-1 flex flex-col items-center divide-y divide-slate-100">
+        <button
+          onClick={() => map.zoomIn()}
+          className="p-2 text-slate-700 hover:bg-slate-100 rounded-t-xl transition-colors"
+          title="확대"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => map.zoomOut()}
+          className="p-2 text-slate-700 hover:bg-slate-100 rounded-b-xl transition-colors"
+          title="축소"
+        >
+          <Minus className="w-4 h-4" />
+        </button>
+      </div>
+
+      <button
+        onClick={() => map.flyTo(center, zoom, { duration: 1 })}
+        className="p-2.5 bg-white/95 backdrop-blur-md text-emerald-700 hover:bg-emerald-50 rounded-2xl shadow-lg border border-slate-200/80 transition-all active:scale-95 flex items-center justify-center"
+        title="축제 위치로 이동"
+      >
+        <LocateFixed className="w-4.5 h-4.5" />
+      </button>
+    </div>
+  );
 }
 
 interface LeafletMapInnerProps {
@@ -102,7 +139,7 @@ export default function LeafletMapInner({
     <div className="w-full h-full relative">
       <MapContainer
         center={mapCenter}
-        zoom={13}
+        zoom={14}
         scrollWheelZoom={true}
         className="w-full h-full z-0"
         zoomControl={false}
@@ -112,7 +149,7 @@ export default function LeafletMapInner({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {mapCenter && <MapController center={mapCenter} zoom={13} />}
+        {mapCenter && <MapController center={mapCenter} zoom={14} />}
 
         {/* 축제 마커 */}
         {festivals.map((festival) => (
@@ -147,12 +184,12 @@ export default function LeafletMapInner({
             icon={createParkingIcon(parking.availableSpaces)}
           >
             <Popup>
-              <div className="p-1 min-w-[160px]">
+              <div className="p-1 min-w-[170px]">
                 <div className="font-bold text-xs text-indigo-900">{parking.name}</div>
                 <div className="text-xs text-slate-600 mt-1">
                   잔여 주차면수:{' '}
                   <span className="font-extrabold text-indigo-600">
-                    {parking.availableSpaces} / {parking.totalSpaces}면
+                    {parking.availableSpaces === 0 ? '만차' : `${parking.availableSpaces} / ${parking.totalSpaces}면`}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">축제장 거리: {parking.distance}</div>

@@ -12,10 +12,10 @@ import {
   ChevronDown,
   Navigation,
   X,
-  ExternalLink,
   ShieldAlert,
   Hourglass,
   CalendarClock,
+  AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -78,13 +78,13 @@ export default function FestivalBottomSheet({
       )}
     >
       {/* 바텀시트 상단 컨트롤 핸들 */}
-      <div className="w-full py-2.5 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 rounded-t-3xl border-b border-slate-100 shrink-0 relative">
+      <div className="w-full py-2 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 rounded-t-3xl border-b border-slate-100 shrink-0 relative">
         <div
           onClick={() => onModeChange(mode === 'full' ? 'half' : 'full')}
           className="w-full flex flex-col items-center justify-center py-1"
         >
-          <div className="w-12 h-1.5 bg-slate-300 rounded-full mb-1" />
-          <div className="flex items-center text-xs font-bold text-slate-500 gap-1">
+          <div className="w-10 h-1 bg-slate-300 rounded-full mb-1" />
+          <div className="flex items-center text-[11px] font-bold text-slate-500 gap-1">
             {mode === 'full' ? (
               <>
                 <span>요약 보기</span>
@@ -102,10 +102,10 @@ export default function FestivalBottomSheet({
         {/* 닫기 버튼 */}
         <button
           onClick={() => onModeChange('collapsed')}
-          className="absolute right-4 top-3 p-1.5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+          className="absolute right-3 top-2.5 p-1.5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
           title="닫기"
         >
-          <X className="w-4 h-4" />
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -115,10 +115,10 @@ export default function FestivalBottomSheet({
         <div>
           <div className="flex items-start justify-between gap-2">
             <div>
-              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100 inline-block mb-1">
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100 inline-block mb-1">
                 {festival.region} · {festival.category}
               </span>
-              <h2 className="text-xl font-black text-slate-900 leading-snug">
+              <h2 className="text-lg font-black text-slate-900 leading-snug">
                 {festival.title}
               </h2>
             </div>
@@ -126,7 +126,7 @@ export default function FestivalBottomSheet({
             {status === 'LIVE' ? (
               <div
                 className={clsx(
-                  'px-3 py-1 rounded-xl text-xs font-extrabold border shrink-0 flex items-center gap-1.5 shadow-2xs',
+                  'px-2.5 py-1 rounded-xl text-xs font-extrabold border shrink-0 flex items-center gap-1 shadow-2xs',
                   getCrowdBadgeStyle(festival.crowdLevel)
                 )}
               >
@@ -134,14 +134,14 @@ export default function FestivalBottomSheet({
                 <span>{festival.crowdLevel}</span>
               </div>
             ) : (
-              <div className="px-3 py-1 rounded-xl text-xs font-extrabold bg-indigo-600 text-white shrink-0 flex items-center gap-1.5 shadow-2xs">
+              <div className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-indigo-600 text-white shrink-0 flex items-center gap-1 shadow-2xs">
                 <Hourglass className="w-3.5 h-3.5" />
                 <span>개막 {getDDayString(festival.startDate)}</span>
               </div>
             )}
           </div>
 
-          <div className="mt-2.5 space-y-1 text-xs text-slate-600">
+          <div className="mt-2 space-y-1 text-xs text-slate-600">
             <div className="flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span className="font-medium">{festival.locationName} ({festival.address})</span>
@@ -155,8 +155,8 @@ export default function FestivalBottomSheet({
 
         {/* 상태별 안내 카드 */}
         {status === 'LIVE' ? (
-          <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200/80 flex items-start gap-3">
-            <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
+          <div className="p-3 bg-amber-50/80 rounded-2xl border border-amber-200/80 flex items-start gap-2.5">
+            <div className="p-1.5 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
               <ShieldAlert className="w-4 h-4" />
             </div>
             <div>
@@ -167,8 +167,8 @@ export default function FestivalBottomSheet({
             </div>
           </div>
         ) : (
-          <div className="p-3.5 bg-indigo-50/80 rounded-2xl border border-indigo-200/80 flex items-start gap-3">
-            <div className="p-2 bg-indigo-600 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
+          <div className="p-3 bg-indigo-50/80 rounded-2xl border border-indigo-200/80 flex items-start gap-2.5">
+            <div className="p-1.5 bg-indigo-600 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
               <CalendarClock className="w-4 h-4" />
             </div>
             <div>
@@ -182,18 +182,18 @@ export default function FestivalBottomSheet({
 
         {/* 주차장 리스트 */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-              <Car className="w-4.5 h-4.5 text-indigo-600" />
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+              <Car className="w-4 h-4 text-indigo-600" />
               <span>주변 공영주차장 현황</span>
             </h3>
 
             {status === 'LIVE' && (
-              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
                 <button
                   onClick={() => setSortOrder('distance')}
                   className={clsx(
-                    'px-2 py-1 rounded-md transition-all',
+                    'px-2 py-0.5 rounded-md transition-all',
                     sortOrder === 'distance'
                       ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
                       : 'text-slate-500 hover:text-slate-800'
@@ -204,7 +204,7 @@ export default function FestivalBottomSheet({
                 <button
                   onClick={() => setSortOrder('available')}
                   className={clsx(
-                    'px-2 py-1 rounded-md transition-all',
+                    'px-2 py-0.5 rounded-md transition-all',
                     sortOrder === 'available'
                       ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
                       : 'text-slate-500 hover:text-slate-800'
@@ -216,22 +216,33 @@ export default function FestivalBottomSheet({
             )}
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {displayedParkingLots.map((parking) => {
               const isFull = parking.availableSpaces === 0;
+              const isLow = parking.availableSpaces > 0 && parking.availableSpaces <= 5;
+              const isEnough = parking.availableSpaces >= 6;
+
               return (
                 <div
                   key={parking.id}
-                  className="p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs flex items-center justify-between gap-3"
+                  className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs flex items-center justify-between gap-2.5"
                 >
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-extrabold text-slate-900 truncate">
-                      {parking.name}
-                    </h4>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                        {parking.name}
+                      </h4>
+                      {isFull && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-red-100 text-red-700 flex items-center gap-0.5">
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                          만차
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-[11px] text-slate-500 flex items-center gap-1">
                         <Navigation className="w-3 h-3 text-slate-400" />
-                        {parking.distance}
+                        도보 {Math.ceil(parking.distanceMeters / 60)}분 ({parking.distance})
                       </span>
                     </div>
                   </div>
@@ -240,26 +251,26 @@ export default function FestivalBottomSheet({
                     {status === 'LIVE' ? (
                       <div
                         className={clsx(
-                          'text-xs font-bold px-2.5 py-1.5 rounded-xl text-center',
+                          'text-xs font-bold px-2.5 py-1 rounded-xl text-center min-w-[72px]',
                           isFull
-                            ? 'bg-slate-100 text-slate-400'
-                            : parking.availableSpaces < 10
-                            ? 'bg-orange-100 text-orange-700'
-                            : 'bg-indigo-50 text-indigo-700'
+                            ? 'bg-red-50 text-red-700 border border-red-200'
+                            : isLow
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                         )}
                       >
                         {isFull ? (
                           <span className="font-extrabold">만차</span>
                         ) : (
                           <>
-                            <span className="text-[10px] text-slate-500 font-medium block">잔여</span>
-                            <span className="text-sm font-black">{parking.availableSpaces}</span>
-                            <span className="text-[10px] font-medium text-slate-400">/{parking.totalSpaces}면</span>
+                            <span className="text-[9px] text-slate-500 font-medium block leading-none mb-0.5">잔여</span>
+                            <span className="text-xs font-black">{parking.availableSpaces}</span>
+                            <span className="text-[9px] font-medium text-slate-400">/{parking.totalSpaces}면</span>
                           </>
                         )}
                       </div>
                     ) : (
-                      <div className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-right">
+                      <div className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-600 text-right">
                         <div>총 {parking.totalSpaces}면</div>
                         <div className="text-[9px] text-indigo-600 font-medium">축제 시작 시 연동</div>
                       </div>
@@ -267,10 +278,11 @@ export default function FestivalBottomSheet({
 
                     <button
                       onClick={() => handleOpenKakaoMap(parking)}
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 transition-colors"
-                      title="길찾기"
+                      className="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1 transition-colors"
+                      title="네비 길찾기 연결"
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <Navigation className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>길찾기</span>
                     </button>
                   </div>
                 </div>
@@ -280,7 +292,7 @@ export default function FestivalBottomSheet({
             {mode === 'half' && festival.parkingLots.length > 2 && (
               <button
                 onClick={() => onModeChange('full')}
-                className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 border border-slate-200"
+                className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 border border-slate-200"
               >
                 <span>전체 주차장 {festival.parkingLots.length}곳 모두 보기</span>
                 <ChevronDown className="w-3.5 h-3.5" />
