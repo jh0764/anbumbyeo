@@ -1,41 +1,62 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Header from '@/components/common/Header';
 import RegionFilter from '@/components/common/RegionFilter';
+import StatusFilter from '@/components/common/StatusFilter';
 import MainMap from '@/components/map/MainMap';
 import FestivalCarousel from '@/components/festival/FestivalCarousel';
 import FestivalBottomSheet, { BottomSheetMode } from '@/components/festival/FestivalBottomSheet';
 import { MOCK_FESTIVALS } from '@/services/mockData';
-import { Region } from '@/types';
+import { Region, StatusFilterType } from '@/types';
+import { getFestivalStatus } from '@/lib/festivalUtils';
 
 export default function Home() {
   const [selectedRegion, setSelectedRegion] = useState<Region>('전체');
-  const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(
-    MOCK_FESTIVALS[0].id
-  );
+  const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
+  const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
 
-  // 선택된 권역에 따라 축제 데이터 필터링
-  const filteredFestivals = useMemo(() => {
-    if (selectedRegion === '전체') return MOCK_FESTIVALS;
-    return MOCK_FESTIVALS.filter((f) => f.region === selectedRegion);
-  }, [selectedRegion]);
-
-  // 권역 변경 시 해당 권역 첫 번째 축제 선택
-  const handleSelectRegion = (region: Region) => {
-    setSelectedRegion(region);
-    const newFiltered =
-      region === '전체'
+  // LIVE / UPCOMING 축제 카운트 계산 (지역 필터 반영)
+  const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
+    // 1차: 지역 필터
+    const regionFiltered =
+      selectedRegion === '전체'
         ? MOCK_FESTIVALS
-        : MOCK_FESTIVALS.filter((f) => f.region === region);
+        : MOCK_FESTIVALS.filter((f) => f.region === selectedRegion);
 
-    if (newFiltered.length > 0) {
-      setSelectedFestivalId(newFiltered[0].id);
+    // EXPIRED 및 FAR_FUTURE 제외한 유효 축제
+    const validFestivals = regionFiltered.filter((f) => {
+      const st = getFestivalStatus(f);
+      return st === 'LIVE' || st === 'UPCOMING';
+    });
+
+    const lCount = validFestivals.filter((f) => getFestivalStatus(f) === 'LIVE').length;
+    const uCount = validFestivals.filter((f) => getFestivalStatus(f) === 'UPCOMING').length;
+
+    // 2차: 상태 필터 (LIVE vs UPCOMING)
+    const finalFiltered = validFestivals.filter(
+      (f) => getFestivalStatus(f) === selectedStatus
+    );
+
+    return {
+      liveCount: lCount,
+      upcomingCount: uCount,
+      filteredFestivals: finalFiltered,
+    };
+  }, [selectedRegion, selectedStatus]);
+
+  // 필터링 목록이 변경되거나 선택된 축제가 목록에 없으면 첫 번째 항목으로 자동 선택
+  useEffect(() => {
+    if (filteredFestivals.length > 0) {
+      const exists = filteredFestivals.some((f) => f.id === selectedFestivalId);
+      if (!exists) {
+        setSelectedFestivalId(filteredFestivals[0].id);
+      }
     } else {
       setSelectedFestivalId(null);
     }
-  };
+  }, [filteredFestivals, selectedFestivalId]);
 
   const selectedFestival = useMemo(() => {
     return MOCK_FESTIVALS.find((f) => f.id === selectedFestivalId) || null;
@@ -46,22 +67,26 @@ export default function Home() {
       {/* 1. 상단 앱 헤더 */}
       <Header />
 
-      {/* 2. 상단 권역 필터 탭 (헤더 바로 아래) */}
+      {/* 2. 필터 영역 (지역 필터 + 상태 필터) */}
       <div className="pt-[57px]">
         <RegionFilter
           selectedRegion={selectedRegion}
-          onSelectRegion={handleSelectRegion}
+          onSelectRegion={setSelectedRegion}
+        />
+        <StatusFilter
+          selectedStatus={selectedStatus}
+          onSelectStatus={setSelectedStatus}
+          liveCount={liveCount}
+          upcomingCount={upcomingCount}
         />
       </div>
 
-      {/* 3. 지도 중심 메인 영역 (60% 이상 노출) */}
+      {/* 3. 지도 중심 메인 영역 */}
       <div className="w-full flex-1 relative">
         <MainMap
           festivals={filteredFestivals}
           selectedFestivalId={selectedFestivalId}
-          onSelectFestival={(id) => {
-            setSelectedFestivalId(id);
-          }}
+          onSelectFestival={setSelectedFestivalId}
         />
 
         {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 (바텀시트가 접혀있을 때 노출) */}
@@ -70,9 +95,7 @@ export default function Home() {
             <FestivalCarousel
               festivals={filteredFestivals}
               selectedFestivalId={selectedFestivalId}
-              onSelectFestival={(id) => {
-                setSelectedFestivalId(id);
-              }}
+              onSelectFestival={setSelectedFestivalId}
               onOpenDetail={() => setBottomSheetMode('half')}
             />
           </div>

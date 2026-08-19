@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Festival, Parking } from '@/types';
+import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
 import {
   MapPin,
   Calendar,
@@ -10,10 +11,11 @@ import {
   ChevronUp,
   ChevronDown,
   Navigation,
-  ArrowUpDown,
   X,
   ExternalLink,
   ShieldAlert,
+  Hourglass,
+  CalendarClock,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -36,6 +38,8 @@ export default function FestivalBottomSheet({
   if (!festival || mode === 'collapsed') {
     return null;
   }
+
+  const status = getFestivalStatus(festival);
 
   // 주차장 정렬
   const sortedParkingLots = [...festival.parkingLots].sort((a, b) => {
@@ -70,10 +74,10 @@ export default function FestivalBottomSheet({
     <div
       className={twMerge(
         'absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-[0_-6px_25px_rgba(0,0,0,0.18)] transition-all duration-300 ease-out flex flex-col',
-        mode === 'full' ? 'h-[82vh]' : 'h-[46vh]'
+        mode === 'full' ? 'h-[82vh]' : 'h-[48vh]'
       )}
     >
-      {/* 바텀시트 상단 드래그 & 컨트롤 핸들 */}
+      {/* 바텀시트 상단 컨트롤 핸들 */}
       <div className="w-full py-2.5 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 rounded-t-3xl border-b border-slate-100 shrink-0 relative">
         <div
           onClick={() => onModeChange(mode === 'full' ? 'half' : 'full')}
@@ -105,9 +109,9 @@ export default function FestivalBottomSheet({
         </button>
       </div>
 
-      {/* 바텀시트 스크롤 본문 */}
+      {/* 바텀시트 본문 영역 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* 축제 타이틀 & 실시간 인파 상태 */}
+        {/* 축제 타이틀 & 상태별 뱃지 */}
         <div>
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -118,15 +122,23 @@ export default function FestivalBottomSheet({
                 {festival.title}
               </h2>
             </div>
-            <div
-              className={clsx(
-                'px-3 py-1 rounded-xl text-xs font-extrabold border shrink-0 flex items-center gap-1.5 shadow-2xs',
-                getCrowdBadgeStyle(festival.crowdLevel)
-              )}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>{festival.crowdLevel}</span>
-            </div>
+
+            {status === 'LIVE' ? (
+              <div
+                className={clsx(
+                  'px-3 py-1 rounded-xl text-xs font-extrabold border shrink-0 flex items-center gap-1.5 shadow-2xs',
+                  getCrowdBadgeStyle(festival.crowdLevel)
+                )}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>{festival.crowdLevel}</span>
+              </div>
+            ) : (
+              <div className="px-3 py-1 rounded-xl text-xs font-extrabold bg-indigo-600 text-white shrink-0 flex items-center gap-1.5 shadow-2xs">
+                <Hourglass className="w-3.5 h-3.5" />
+                <span>개막 {getDDayString(festival.startDate)}</span>
+              </div>
+            )}
           </div>
 
           <div className="mt-2.5 space-y-1 text-xs text-slate-600">
@@ -141,55 +153,69 @@ export default function FestivalBottomSheet({
           </div>
         </div>
 
-        {/* 실시간 혼잡도 안내 카드 */}
-        <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200/80 flex items-start gap-3">
-          <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
-            <ShieldAlert className="w-4 h-4" />
+        {/* 상태별 안내 카드 */}
+        {status === 'LIVE' ? (
+          <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200/80 flex items-start gap-3">
+            <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
+              <ShieldAlert className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-900">실시간 혼잡도 안내</h4>
+              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                {festival.crowdMessage}
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-amber-900">실시간 인파 혼잡도 안내</h4>
-            <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
-              {festival.crowdMessage}
-            </p>
+        ) : (
+          <div className="p-3.5 bg-indigo-50/80 rounded-2xl border border-indigo-200/80 flex items-start gap-3">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
+              <CalendarClock className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-indigo-900">개막 예정 안내</h4>
+              <p className="text-xs text-indigo-800 mt-0.5 leading-relaxed">
+                본 축제는 개막 예정 축제입니다. 축제 시작 시 실시간 주차장 잔여면수 및 인파 밀집도 데이터가 자동 연동됩니다.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* 공영주차장 실시간 잔여 현황 세션 */}
+        {/* 주차장 리스트 */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
               <Car className="w-4.5 h-4.5 text-indigo-600" />
-              <span>주변 공영주차장 실시간 잔여</span>
+              <span>주변 공영주차장 현황</span>
             </h3>
 
-            {/* 정렬 토글 버튼 */}
-            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
-              <button
-                onClick={() => setSortOrder('distance')}
-                className={clsx(
-                  'px-2 py-1 rounded-md transition-all',
-                  sortOrder === 'distance'
-                    ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
-                    : 'text-slate-500 hover:text-slate-800'
-                )}
-              >
-                거리순
-              </button>
-              <button
-                onClick={() => setSortOrder('available')}
-                className={clsx(
-                  'px-2 py-1 rounded-md transition-all',
-                  sortOrder === 'available'
-                    ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
-                    : 'text-slate-500 hover:text-slate-800'
-                )}
-              >
-                잔여석순
-              </button>
-            </div>
+            {status === 'LIVE' && (
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
+                <button
+                  onClick={() => setSortOrder('distance')}
+                  className={clsx(
+                    'px-2 py-1 rounded-md transition-all',
+                    sortOrder === 'distance'
+                      ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  )}
+                >
+                  거리순
+                </button>
+                <button
+                  onClick={() => setSortOrder('available')}
+                  className={clsx(
+                    'px-2 py-1 rounded-md transition-all',
+                    sortOrder === 'available'
+                      ? 'bg-white text-indigo-900 shadow-2xs font-extrabold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  )}
+                >
+                  잔여석순
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* 주차장 카드리스트 */}
           <div className="space-y-2.5">
             {displayedParkingLots.map((parking) => {
               const isFull = parking.availableSpaces === 0;
@@ -211,26 +237,33 @@ export default function FestivalBottomSheet({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <div
-                      className={clsx(
-                        'text-xs font-bold px-2.5 py-1.5 rounded-xl text-center',
-                        isFull
-                          ? 'bg-slate-100 text-slate-400'
-                          : parking.availableSpaces < 10
-                          ? 'bg-orange-100 text-orange-700'
-                          : 'bg-indigo-50 text-indigo-700'
-                      )}
-                    >
-                      {isFull ? (
-                        <span className="font-extrabold">만차</span>
-                      ) : (
-                        <>
-                          <span className="text-[10px] text-slate-500 font-medium block">잔여</span>
-                          <span className="text-sm font-black">{parking.availableSpaces}</span>
-                          <span className="text-[10px] font-medium text-slate-400">/{parking.totalSpaces}</span>
-                        </>
-                      )}
-                    </div>
+                    {status === 'LIVE' ? (
+                      <div
+                        className={clsx(
+                          'text-xs font-bold px-2.5 py-1.5 rounded-xl text-center',
+                          isFull
+                            ? 'bg-slate-100 text-slate-400'
+                            : parking.availableSpaces < 10
+                            ? 'bg-orange-100 text-orange-700'
+                            : 'bg-indigo-50 text-indigo-700'
+                        )}
+                      >
+                        {isFull ? (
+                          <span className="font-extrabold">만차</span>
+                        ) : (
+                          <>
+                            <span className="text-[10px] text-slate-500 font-medium block">잔여</span>
+                            <span className="text-sm font-black">{parking.availableSpaces}</span>
+                            <span className="text-[10px] font-medium text-slate-400">/{parking.totalSpaces}면</span>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-right">
+                        <div>총 {parking.totalSpaces}면</div>
+                        <div className="text-[9px] text-indigo-600 font-medium">축제 시작 시 연동</div>
+                      </div>
+                    )}
 
                     <button
                       onClick={() => handleOpenKakaoMap(parking)}
