@@ -15,7 +15,6 @@ import {
   ShieldAlert,
   Hourglass,
   CalendarClock,
-  AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -74,7 +73,7 @@ export default function FestivalBottomSheet({
     <div
       className={twMerge(
         'absolute bottom-0 left-0 right-0 z-20 bg-white rounded-t-3xl shadow-[0_-6px_25px_rgba(0,0,0,0.18)] transition-all duration-300 ease-out flex flex-col',
-        mode === 'full' ? 'h-[82vh]' : 'h-[48vh]'
+        mode === 'full' ? 'h-[80vh]' : 'h-[46vh]'
       )}
     >
       {/* 바텀시트 상단 컨트롤 핸들 */}
@@ -220,25 +219,17 @@ export default function FestivalBottomSheet({
             {displayedParkingLots.map((parking) => {
               const isFull = parking.availableSpaces === 0;
               const isLow = parking.availableSpaces > 0 && parking.availableSpaces <= 5;
-              const isEnough = parking.availableSpaces >= 6;
 
               return (
                 <div
                   key={parking.id}
-                  className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs flex items-center justify-between gap-2.5"
+                  className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs flex items-center justify-between gap-3"
                 >
+                  {/* 좌측 주차장 정보 (중복된 만차 뱃지 제거) */}
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-extrabold text-slate-900 truncate">
-                        {parking.name}
-                      </h4>
-                      {isFull && (
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-red-100 text-red-700 flex items-center gap-0.5">
-                          <AlertTriangle className="w-2.5 h-2.5" />
-                          만차
-                        </span>
-                      )}
-                    </div>
+                    <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                      {parking.name}
+                    </h4>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-[11px] text-slate-500 flex items-center gap-1">
                         <Navigation className="w-3 h-3 text-slate-400" />
@@ -247,41 +238,37 @@ export default function FestivalBottomSheet({
                     </div>
                   </div>
 
+                  {/* 우측 2단 깔끔 배치: [잔여 상태 뱃지] + [길찾기 버튼] */}
                   <div className="flex items-center gap-2 shrink-0">
                     {status === 'LIVE' ? (
                       <div
                         className={clsx(
-                          'text-xs font-bold px-2.5 py-1 rounded-xl text-center min-w-[72px]',
+                          'text-xs font-bold px-2.5 py-1.5 rounded-xl text-center min-w-[76px]',
                           isFull
-                            ? 'bg-red-50 text-red-700 border border-red-200'
+                            ? 'bg-red-100 text-red-700 font-extrabold'
                             : isLow
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
                         )}
                       >
                         {isFull ? (
-                          <span className="font-extrabold">만차</span>
+                          <span>만차 (0/{parking.totalSpaces})</span>
                         ) : (
-                          <>
-                            <span className="text-[9px] text-slate-500 font-medium block leading-none mb-0.5">잔여</span>
-                            <span className="text-xs font-black">{parking.availableSpaces}</span>
-                            <span className="text-[9px] font-medium text-slate-400">/{parking.totalSpaces}면</span>
-                          </>
+                          <span>잔여 {parking.availableSpaces}/{parking.totalSpaces}면</span>
                         )}
                       </div>
                     ) : (
-                      <div className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 text-slate-600 text-right">
-                        <div>총 {parking.totalSpaces}면</div>
-                        <div className="text-[9px] text-indigo-600 font-medium">축제 시작 시 연동</div>
+                      <div className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-center">
+                        총 {parking.totalSpaces}면
                       </div>
                     )}
 
                     <button
                       onClick={() => handleOpenKakaoMap(parking)}
-                      className="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1 transition-colors"
+                      className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs"
                       title="네비 길찾기 연결"
                     >
-                      <Navigation className="w-3.5 h-3.5 text-indigo-600" />
+                      <Navigation className="w-3.5 h-3.5" />
                       <span>길찾기</span>
                     </button>
                   </div>

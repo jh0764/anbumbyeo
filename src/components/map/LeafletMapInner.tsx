@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking } from '@/types';
-import { Compass, LocateFixed, Plus, Minus } from 'lucide-react';
+import { LocateFixed, Plus, Minus, Compass } from 'lucide-react';
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 
@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// 축제 커스텀 핀
+// 축제 마커 아이콘 (투명 배경)
 const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
   let bgColor = 'bg-emerald-500';
   let borderColor = 'border-emerald-700';
@@ -31,11 +31,11 @@ const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
     borderColor = 'border-blue-700';
   }
 
-  const scale = isSelected ? 'scale-125 z-50 ring-4 ring-white/90 shadow-2xl' : 'hover:scale-110';
+  const scale = isSelected ? 'scale-125 z-50 ring-4 ring-white/90 shadow-lg' : 'hover:scale-110';
 
   const html = `
     <div class="relative flex items-center justify-center transition-all duration-200 ${scale}">
-      <div class="w-10 h-10 rounded-full ${bgColor} border-2 ${borderColor} text-white shadow-xl flex items-center justify-center font-bold text-sm">
+      <div class="w-10 h-10 rounded-full ${bgColor} border-2 ${borderColor} text-white shadow-md flex items-center justify-center font-bold text-sm">
         🎉
       </div>
       <div class="absolute -bottom-1 w-2.5 h-2.5 ${bgColor} rotate-45"></div>
@@ -51,7 +51,7 @@ const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
   });
 };
 
-// 고도화된 주차장 커스텀 핀 (0면: 빨강, 1~5면: 주황, 6면 이상: 초록)
+// 주차장 마커 아이콘 (투명 배경)
 const createParkingIcon = (available: number) => {
   let bgColor = 'bg-emerald-600';
   let badgeText = `${available}면`;
@@ -64,7 +64,7 @@ const createParkingIcon = (available: number) => {
   }
 
   const html = `
-    <div class="flex items-center gap-1 px-2.5 py-1 rounded-full ${bgColor} text-white text-xs font-extrabold shadow-lg border-2 border-white transition-transform hover:scale-105">
+    <div class="flex items-center gap-1 px-2.5 py-1 rounded-full ${bgColor} text-white text-xs font-extrabold shadow-md border-2 border-white transition-transform hover:scale-105">
       <span>P</span>
       <span class="bg-white/20 px-1 rounded text-[11px] font-bold">${badgeText}</span>
     </div>
@@ -79,7 +79,7 @@ const createParkingIcon = (available: number) => {
   });
 };
 
-// 지도의 중심점 조절 및 우측 하단 컨트롤러 컴포넌트
+// 지도의 중심점 조절 및 '우측 상단' 플로팅 컨트롤러 컴포넌트
 function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
 
@@ -88,9 +88,9 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
   }, [center, zoom, map]);
 
   return (
-    <div className="absolute bottom-28 right-3 z-10 flex flex-col gap-2">
-      {/* 줌 인/아웃 및 위치 재정렬 버튼 */}
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-lg border border-slate-200/80 p-1 flex flex-col items-center divide-y divide-slate-100">
+    <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+      {/* 줌 인/아웃 컨트롤 (우측 상단) */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-md border border-slate-200/80 p-1 flex flex-col items-center divide-y divide-slate-100">
         <button
           onClick={() => map.zoomIn()}
           className="p-2 text-slate-700 hover:bg-slate-100 rounded-t-xl transition-colors"
@@ -107,9 +107,10 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
         </button>
       </div>
 
+      {/* 축제 위치 재정렬 버튼 */}
       <button
         onClick={() => map.flyTo(center, zoom, { duration: 1 })}
-        className="p-2.5 bg-white/95 backdrop-blur-md text-emerald-700 hover:bg-emerald-50 rounded-2xl shadow-lg border border-slate-200/80 transition-all active:scale-95 flex items-center justify-center"
+        className="p-2.5 bg-white/95 backdrop-blur-md text-emerald-700 hover:bg-emerald-50 rounded-2xl shadow-md border border-slate-200/80 transition-all active:scale-95 flex items-center justify-center"
         title="축제 위치로 이동"
       >
         <LocateFixed className="w-4.5 h-4.5" />

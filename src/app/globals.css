@@ -24,3 +24,19 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Leaflet DivIcon 커스텀 사각형 투명화 */
+.custom-festival-icon,
+.custom-parking-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* 스크롤바 숨김 유틸리티 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

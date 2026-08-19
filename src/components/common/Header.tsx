@@ -25,7 +25,7 @@ export default function Header() {
   };
 
   return (
-    <header className="absolute top-0 left-0 right-0 z-10 px-3 py-2 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs">
+    <header className="w-full pt-9 pb-2 px-3.5 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs shrink-0 z-20">
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-xs">
           안

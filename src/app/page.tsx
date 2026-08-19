@@ -19,13 +19,11 @@ export default function Home() {
 
   // LIVE / UPCOMING 축제 카운트 계산 (지역 필터 반영)
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
-    // 1차: 지역 필터
     const regionFiltered =
       selectedRegion === '전체'
         ? MOCK_FESTIVALS
         : MOCK_FESTIVALS.filter((f) => f.region === selectedRegion);
 
-    // EXPIRED 및 FAR_FUTURE 제외한 유효 축제
     const validFestivals = regionFiltered.filter((f) => {
       const st = getFestivalStatus(f);
       return st === 'LIVE' || st === 'UPCOMING';
@@ -34,7 +32,6 @@ export default function Home() {
     const lCount = validFestivals.filter((f) => getFestivalStatus(f) === 'LIVE').length;
     const uCount = validFestivals.filter((f) => getFestivalStatus(f) === 'UPCOMING').length;
 
-    // 2차: 상태 필터 (LIVE vs UPCOMING)
     const finalFiltered = validFestivals.filter(
       (f) => getFestivalStatus(f) === selectedStatus
     );
@@ -46,7 +43,6 @@ export default function Home() {
     };
   }, [selectedRegion, selectedStatus]);
 
-  // 필터링 목록이 변경되거나 선택된 축제가 목록에 없으면 첫 번째 항목으로 자동 선택
   useEffect(() => {
     if (filteredFestivals.length > 0) {
       const exists = filteredFestivals.some((f) => f.id === selectedFestivalId);
@@ -64,11 +60,9 @@ export default function Home() {
 
   return (
     <main className="relative w-full h-screen overflow-hidden flex flex-col bg-slate-900 select-none">
-      {/* 1. 상단 앱 헤더 */}
-      <Header />
-
-      {/* 2. 필터 영역 (지역 필터 + 상태 필터) */}
-      <div className="pt-[57px]">
+      {/* 1. 상단 Safe-Area 적용 헤더 & 필터 바 영역 */}
+      <div className="w-full flex flex-col shrink-0 z-20">
+        <Header />
         <RegionFilter
           selectedRegion={selectedRegion}
           onSelectRegion={setSelectedRegion}
@@ -81,8 +75,8 @@ export default function Home() {
         />
       </div>
 
-      {/* 3. 지도 중심 메인 영역 */}
-      <div className="w-full flex-1 relative">
+      {/* 2. 지도 중심 메인 영역 */}
+      <div className="w-full flex-1 relative z-0">
         <MainMap
           festivals={filteredFestivals}
           selectedFestivalId={selectedFestivalId}
@@ -102,7 +96,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* 4. 3단계 제어 축제 상세 바텀시트 */}
+      {/* 3. 3단계 제어 축제 상세 바텀시트 */}
       <FestivalBottomSheet
         festival={selectedFestival}
         mode={bottomSheetMode}
