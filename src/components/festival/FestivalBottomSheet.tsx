@@ -179,7 +179,7 @@ export default function FestivalBottomSheet({
           </div>
         )}
 
-        {/* 주차장 리스트 */}
+        {/* 주차장 리스트 (2단 깔끔 구조) */}
         <div>
           <div className="flex items-center justify-between mb-2.5">
             <h3 className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
@@ -225,7 +225,7 @@ export default function FestivalBottomSheet({
                   key={parking.id}
                   className="p-3 rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs flex items-center justify-between gap-3"
                 >
-                  {/* 좌측 주차장 정보 (중복된 만차 뱃지 제거) */}
+                  {/* [좌측: 주차장명 + 도보시간/거리] (중복된 ⚠️만차 박스 완전 삭제) */}
                   <div className="min-w-0 flex-1">
                     <h4 className="text-xs font-extrabold text-slate-900 truncate">
                       {parking.name}
@@ -238,7 +238,7 @@ export default function FestivalBottomSheet({
                     </div>
                   </div>
 
-                  {/* 우측 2단 깔끔 배치: [잔여 상태 뱃지] + [길찾기 버튼] */}
+                  {/* [우측: 잔여상태 뱃지 + 길찾기 버튼] 2단 구조 고정 */}
                   <div className="flex items-center gap-2 shrink-0">
                     {status === 'LIVE' ? (
                       <div

@@ -25,11 +25,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Leaflet DivIcon 커스텀 사각형 투명화 */
+/* Leaflet DivIcon 커스텀 사각형 및 사각 테두리 무력화 */
+.leaflet-marker-icon,
 .custom-festival-icon,
 .custom-parking-icon {
   background: transparent !important;
   border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* 스크롤바 숨김 유틸리티 */
