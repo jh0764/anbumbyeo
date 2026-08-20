@@ -15,7 +15,7 @@ const PARKING_STATUS_API_URL =
 function getRegionFromAddress(address: string, lat: number, lng: number): Region {
   if (!address) return '서울';
 
-  if (address.includes('부산') || address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('황령산') || address.includes('부산진') || address.includes('연제') || address.includes('남구')) {
+  if (address.includes('부산') || address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('황령산') || address.includes('부산진') || address.includes('연제') || address.includes('남구') || address.includes('센텀') || address.includes('벡스코')) {
     return '부산';
   }
   if (address.includes('대구') || address.includes('수성') || address.includes('달서')) {
@@ -82,7 +82,7 @@ function isPublicParkingDiv(info: any): boolean {
   if (divName.includes('민영')) {
     return false;
   }
-  if (divName.includes('공영') || divName.includes('부설') || divName.includes('노외') || rawName.includes('공영') || rawName.includes('구청') || rawName.includes('시청') || rawName.includes('동사무소') || rawName.includes('주민센터') || rawName.includes('생태공원') || rawName.includes('체육공원') || rawName.includes('전망대') || rawName.includes('황령산') || rawName.includes('봉수대') || rawName.includes('쉼터')) {
+  if (divName.includes('공영') || divName.includes('부설') || divName.includes('노외') || rawName.includes('공영') || rawName.includes('벡스코') || rawName.includes('BEXCO') || rawName.includes('전시장') || rawName.includes('컨벤션') || rawName.includes('경기장') || rawName.includes('체육관') || rawName.includes('전망대') || rawName.includes('황령산') || rawName.includes('봉수대') || rawName.includes('쉼터')) {
     return true;
   }
   return false;
@@ -213,8 +213,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 통합 주차장 기본정보 수집
-    const targetCodes = ['26500', '26530', '26350', '26230', '26290', '26470', '11110', '11140', '42150', '44770'];
+    // 3. 해운대구(26350), 벡스코, 수영구(26500) 등 주차장 기본정보 수집
+    const targetCodes = ['26350', '26500', '26530', '26230', '26290', '26470', '11110', '11140', '42150', '44770'];
 
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
@@ -303,7 +303,7 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 5. [핵심 필터링]: 구분과 무관하게 파싱 최우선 단계에서 10면 이상 유효 주차장만 엄격 선별 (1~9면 초소형 100% 원천 제거)
+    // 5. 10면 이상 유효 주차장 파싱 ('부설', '공영', '노외' 모두 포함)
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -312,25 +312,34 @@ export async function GET(request: NextRequest) {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+      const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
 
-      // [원천 제거]: 1석/2석/3석~9석 초소형 부설/빌라 주차장(광안리슈빌DS 등) 100% 무조건 삭제
-      if (totalSpaces < 10) continue;
+      const isDirectVenueParking =
+        cleanedName.includes('벡스코') ||
+        cleanedName.includes('BEXCO') ||
+        cleanedName.includes('전시장') ||
+        cleanedName.includes('컨벤션') ||
+        cleanedName.includes('경기장') ||
+        cleanedName.includes('황령산');
+
+      if (totalSpaces < 10 && !isDirectVenueParking) continue;
 
       const isPublic = isPublicParkingDiv(info);
-      const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      let availableSpaces = totalSpaces;
+      const finalTotalSpaces = totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 500);
+
+      let availableSpaces = finalTotalSpaces;
       if (status) {
         const occupied = parseInt(
           status.now_park_cnt || status.sum_curr_use_park_cnt || status.cur_use_prk_cnt || '0',
           10
         );
-        availableSpaces = Math.max(0, totalSpaces - occupied);
+        availableSpaces = Math.max(0, finalTotalSpaces - occupied);
       } else {
-        availableSpaces = Math.floor(totalSpaces * 0.65);
+        availableSpaces = Math.floor(finalTotalSpaces * 0.65);
       }
 
       const feeInfo = parseFeeInfoFromApi(info, isPublic);
@@ -340,7 +349,7 @@ export async function GET(request: NextRequest) {
         name: cleanedName,
         lat,
         lng,
-        totalSpaces,
+        totalSpaces: finalTotalSpaces,
         availableSpaces,
         distance: '',
         distanceMeters: 0,
@@ -351,7 +360,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 6. 10면 이상 유효 주차장만 대상으로 슬롯 구성 (공영 3개 + 민영 2개)
+    // 6. 벡스코 등 행사장 자체 부설 주차장 최상단(1순위) 고정 정렬
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -391,11 +400,17 @@ export async function GET(request: NextRequest) {
         const festLat = parseFloat(f.mapy);
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
+        const festTitle = f.title || '';
 
         const evaluatedLots = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
-            const isDirectNameMatch =
+            const parkingAddr = p.address || '';
+            const isDirectVenueMatch =
+              (festTitle.includes('벡스코') || festAddress.includes('APEC로') || festAddress.includes('벡스코')) &&
+              (p.name.includes('벡스코') || p.name.includes('BEXCO') || p.name.includes('전시장') || p.name.includes('컨벤션') || parkingAddr.includes('APEC로'));
+
+            const isGenericDirectMatch =
               p.name.includes('황령산') ||
               p.name.includes('봉수대') ||
               p.name.includes('전망대') ||
@@ -407,8 +422,10 @@ export async function GET(request: NextRequest) {
               p.name.includes('생태공원');
 
             let priorityScore = distM;
-            if (distM <= 500 || isDirectNameMatch) {
-              priorityScore = distM - 2000;
+            if (isDirectVenueMatch) {
+              priorityScore = distM - 10000;
+            } else if (distM <= 200 || isGenericDirectMatch) {
+              priorityScore = distM - 3000;
             }
 
             return {
@@ -419,15 +436,14 @@ export async function GET(request: NextRequest) {
             };
           });
 
-        let nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 1000);
+        let nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 1500);
 
         if (nearbyList.length < 2) {
-          nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2000);
+          nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2500);
         }
 
         nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
 
-        // 10면 이상 유효 주차장에서 공영 최대 3개 + 민영 최대 2개 슬롯 배정
         const publicParkings = nearbyList.filter((p) => p.isPublic).slice(0, 3);
         const privateParkings = nearbyList.filter((p) => !p.isPublic).slice(0, 2);
 
@@ -485,7 +501,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[10면 이상 필터링 & 실시간 표기 완수 건수]', sortedFestivals.length);
+    console.log('[벡스코 및 행사장 직속 부설 주차장 1순위 고정 완료 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
