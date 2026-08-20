@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
       console.error('[API Error] locationBasedList2 호출 예외:', err);
     }
 
-    // 2. detailIntro2 API를 통해 각 축제의 실제 시작일(eventstartdate) 및 종료일(eventenddate) 병열 연동
+    // 2. detailIntro2 API를 통해 각 축제의 실제 시작일(eventstartdate) 및 종료일(eventenddate) 병렬 수집
     const detailDatesMap = new Map<string, { start: string; end: string }>();
 
     if (contentTypeId === '15' && rawList.length > 0) {
@@ -157,11 +157,11 @@ export async function GET(request: NextRequest) {
           if (!res.ok) return null;
           const text = await res.text();
           const json = JSON.parse(text);
-          const detailItem =
-            json?.response?.body?.items?.item?.[0] ||
-            json?.response?.body?.items?.item ||
-            json?.items?.item?.[0] ||
-            json?.items?.item;
+
+          const detailItem = Array.isArray(json?.response?.body?.items?.item)
+            ? json.response.body.items.item[0]
+            : json?.response?.body?.items?.item ||
+              (Array.isArray(json?.items?.item) ? json.items.item[0] : json?.items?.item);
 
           if (detailItem) {
             const start = String(detailItem.eventstartdate || detailItem.event_start_date || '');
@@ -182,7 +182,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
+    // 3. 주차장 정보 & 실시간 현황 조인
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -275,7 +275,7 @@ export async function GET(request: NextRequest) {
     const day = String(now.getDate()).padStart(2, '0');
     const todayNum = Number(`${year}${month}${day}`) || 20260821;
 
-    // 5. 엄격한 날짜 필터링 및 과거 축제 100% 필터링 배제
+    // 5. 실제 날짜 검증 및 엄격 필터링 (가짜 하드코딩 날짜 100% 배제)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -285,14 +285,23 @@ export async function GET(request: NextRequest) {
         const contentId = f.contentid || f.contentId;
         const detailDate = detailDatesMap.get(contentId);
 
-        let rawStart = detailDate?.start || String(f.eventstartdate || f.event_start_date || '');
-        let rawEnd = detailDate?.end || String(f.eventenddate || f.event_end_date || '');
+        const rawStart = detailDate?.start || String(f.eventstartdate || f.event_start_date || '');
+        const rawEnd = detailDate?.end || String(f.eventenddate || f.event_end_date || '');
+
+        // rawStart 또는 rawEnd가 없거나 8자리 미만이면 무조건 제외 (drop)
+        if (!rawStart || !rawEnd || rawStart.length < 8 || rawEnd.length < 8) {
+          return false;
+        }
 
         const startNum = Number(rawStart);
         const endNum = Number(rawEnd);
 
-        // [과거 종료 축제 100% 배제]: 종료일이 오늘보다 명백히 이전인 행사는 무조건 필터링 제외!
-        if (!isNaN(endNum) && rawEnd.length >= 8 && endNum < todayNum) {
+        if (isNaN(startNum) || isNaN(endNum)) {
+          return false;
+        }
+
+        // [과거 종료 축제 배제]: endNum < todayNum 인 축제는 무조건 100% 제외
+        if (endNum < todayNum) {
           return false;
         }
 
@@ -326,22 +335,15 @@ export async function GET(request: NextRequest) {
         const contentId = f.contentid || f.contentId;
         const detailDate = detailDatesMap.get(contentId);
 
-        let rawStart = detailDate?.start || String(f.eventstartdate || f.event_start_date || '');
-        let rawEnd = detailDate?.end || String(f.eventenddate || f.event_end_date || '');
+        const rawStart = detailDate?.start || String(f.eventstartdate || f.event_start_date || '');
+        const rawEnd = detailDate?.end || String(f.eventenddate || f.event_end_date || '');
 
-        let startDate = '2026-08-21';
-        let endDate = '2026-10-31';
+        // 공공데이터 원본 8자리 기반 날짜 변환
+        const startDate = `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`;
+        const endDate = `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`;
 
-        if (rawStart.length >= 8) {
-          startDate = `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`;
-        }
-        if (rawEnd.length >= 8) {
-          endDate = `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`;
-        }
-
-        // '상시 진행' 문구 완전 삭제 -> YYYY.MM.DD ~ YYYY.MM.DD 규격화
         const period = categoryType === '축제'
-          ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}`
+          ? `${rawStart.slice(0, 4)}.${rawStart.slice(4, 6)}.${rawStart.slice(6, 8)} ~ ${rawEnd.slice(0, 4)}.${rawEnd.slice(4, 6)}.${rawEnd.slice(6, 8)}`
           : '연중무휴';
 
         return {
@@ -367,7 +369,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    console.log('[detailIntro2 수집 완수 건수]', resultFestivals.length);
+    console.log('[detailIntro2 원본 수집 완수 건수]', resultFestivals.length);
 
     return NextResponse.json({
       success: true,
