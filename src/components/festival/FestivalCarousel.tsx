@@ -2,7 +2,7 @@
 
 import { useRef, useEffect } from 'react';
 import { Festival, Parking } from '@/types';
-import { getFestivalStatus, getDDayString, getDiffDays } from '@/lib/festivalUtils';
+import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
 import { Users, Car, MapPin, Calendar, Hourglass, AlertCircle, Navigation, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -72,7 +72,6 @@ export default function FestivalCarousel({
           const isSelected = fest.id === selectedFestivalId;
           const isFestival = fest.categoryType === '축제';
           const status = isFestival ? getFestivalStatus(fest) : 'LIVE';
-          const daysLeft = isFestival ? getDiffDays(fest.startDate) : 0;
 
           // 최단거리 주차장 찾기
           const sortedByDistance = [...fest.parkingLots].sort(
@@ -123,9 +122,9 @@ export default function FestivalCarousel({
                       <span>{fest.crowdLevel}</span>
                     </div>
                   ) : (
-                    <div className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1 shadow-xs animate-pulse">
+                    <div className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1 shadow-xs">
                       <Hourglass className="w-3 h-3" />
-                      <span>⏳ {getDDayString(fest.startDate)} ({daysLeft}일 남음)</span>
+                      <span>⏳ {getDDayString(fest.startDate)}</span>
                     </div>
                   )}
                 </div>
