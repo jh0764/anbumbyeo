@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 're
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking, Region } from '@/types';
-import { Plus, Minus, Search, RefreshCw } from 'lucide-react';
+import { Plus, Minus, Search, RefreshCw, Car } from 'lucide-react';
 
 interface LeafletMapInnerProps {
   festivals: Festival[];
@@ -62,37 +62,38 @@ function createFestivalIcon(festival: Festival, isSelected: boolean) {
   });
 }
 
+// 지도 위 'P' 파란색/인디고 커스텀 주차장 마커
 function createParkingIcon(parking: Parking) {
-  const isFull = parking.availableSpaces === 0;
-  const isCrowded = parking.availableSpaces <= 5;
+  const isFull = parking.isRealtime && parking.availableSpaces === 0;
+  const isCrowded = parking.isRealtime && parking.availableSpaces <= 5;
+  const isPublic = parking.isPublic !== false;
 
-  let colorClass = 'bg-emerald-500 border-emerald-200';
+  let colorClass = isPublic ? 'bg-indigo-600 border-indigo-200' : 'bg-slate-700 border-slate-300';
   if (isFull) {
-    colorClass = 'bg-red-500 border-red-200';
+    colorClass = 'bg-red-600 border-red-200';
   } else if (isCrowded) {
     colorClass = 'bg-amber-500 border-amber-200';
   }
 
   const iconHtml = `
-    <div class="relative flex flex-col items-center">
-      <div class="w-7 h-7 rounded-full ${colorClass} text-white flex items-center justify-center font-extrabold text-xs shadow-md border shrink-0">
+    <div class="relative flex flex-col items-center group cursor-pointer">
+      <div class="w-8 h-8 rounded-full ${colorClass} text-white flex items-center justify-center font-extrabold text-xs shadow-lg border-2 transition-transform duration-200 hover:scale-110">
         P
       </div>
-      <div class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-800 text-[9px] font-extrabold px-1.5 py-0.2 rounded border border-slate-200 shadow-2xs">
-        ${isFull ? '만차' : `${parking.availableSpaces}면`}
+      <div class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-900 text-[9px] font-extrabold px-1.5 py-0.3 rounded border border-slate-300 shadow-md">
+        ${parking.isRealtime ? (isFull ? '만차' : `${parking.availableSpaces}면`) : '공영'}
       </div>
     </div>
   `;
 
   return L.divIcon({
     html: iconHtml,
-    className: 'bg-transparent border-0 outline-none shadow-none',
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    className: 'bg-transparent border-0 outline-none shadow-none z-[900]',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
   });
 }
 
-// 2. 지역 탭 선택 및 축제 포커스 카메라 조율 컨트롤러
 function CameraController({
   selectedFestival,
   selectedRegion,
@@ -106,7 +107,6 @@ function CameraController({
   const prevFestIdRef = useRef<string | null>(null);
   const prevRegionRef = useRef<Region | undefined>(selectedRegion);
 
-  // 선택 축제 포커스 (Focus Mode)
   useEffect(() => {
     if (!selectedFestival) {
       prevFestIdRef.current = null;
@@ -137,7 +137,6 @@ function CameraController({
     }
   }, [selectedFestival, parkingLots, map]);
 
-  // 권역 탭 선택 시 카메라 위치 연동 (카테고리 변경 시 서울 튕김 완전 방지!)
   useEffect(() => {
     if (selectedRegion && prevRegionRef.current !== selectedRegion && !selectedFestival) {
       prevRegionRef.current = selectedRegion;
@@ -151,7 +150,6 @@ function CameraController({
   return null;
 }
 
-// 3. 지도 이동(moveend) 이벤트 수신 및 '이 지역에서 재검색' 플로팅 버튼
 function MapEventsController({
   onSearchArea,
 }: {
@@ -201,7 +199,6 @@ function MapEventsController({
   );
 }
 
-// 4. 우측 상단 플로팅 컨트롤
 function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
   const map = useMap();
 
@@ -242,7 +239,6 @@ export default function LeafletMapInner({
   onSelectFestival,
   onSearchArea,
 }: LeafletMapInnerProps) {
-  // 축제/명소 목록 중복 제거
   const uniqueFestivals = useMemo(() => {
     const seen = new Set<string>();
     return festivals.filter((f) => {
@@ -258,7 +254,6 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  // 선택 지역에 기반한 초기 좌표 (카테고리 전환 시 서울 튕김 100% 방지)
   const initialCenter = useMemo(() => {
     const cam = REGION_CAMERA[selectedRegion] || REGION_CAMERA['서울'];
     return [cam.lat, cam.lng] as [number, number];
@@ -266,22 +261,19 @@ export default function LeafletMapInner({
 
   const defaultCenter = useRef<[number, number]>(initialCenter).current;
 
-  // Focus Mode: 도보 700m 이내 주차장만 렌더링
+  // selectedFestival 활성화 시 도보 1km 이내 공영/민영 주차장 렌더링
   const displayParkingLots = useMemo(() => {
     if (!selectedFestival || !selectedFestival.parkingLots) return [];
 
     const seenParking = new Set<string>();
-    const sorted = [...selectedFestival.parkingLots]
+    return [...selectedFestival.parkingLots]
       .filter((p) => {
         const key = `${p.id || p.name}-${p.lat.toFixed(4)}-${p.lng.toFixed(4)}`;
         if (seenParking.has(key)) return false;
         seenParking.add(key);
         return true;
       })
-      .filter((p) => p.distanceMeters <= 700)
-      .sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-    return sorted.slice(0, 5);
+      .slice(0, 5);
   }, [selectedFestival]);
 
   return (
@@ -306,7 +298,7 @@ export default function LeafletMapInner({
           parkingLots={displayParkingLots}
         />
 
-        {/* 1. 마커 조건부 렌더링 */}
+        {/* 1. 축제 핀 마커 렌더링 */}
         {selectedFestival ? (
           <Marker
             key={`fest-focus-${selectedFestival.id}`}
@@ -326,7 +318,7 @@ export default function LeafletMapInner({
           ))
         )}
 
-        {/* 2. 주차장 마커 렌더링 (도보 700m 이내 주차장만) */}
+        {/* 2. 축제 선택 시 주변 주차장 P 마커 즉시 렌더링 & 팝업(요금, 도보시간, 잔여면수) 연동 */}
         {selectedFestival &&
           displayParkingLots.map((parking, idx) => {
             const parkingKey = `parking-${parking.id || 'prk'}-${idx}`;
@@ -337,14 +329,38 @@ export default function LeafletMapInner({
                 position={[parking.lat, parking.lng]}
                 icon={createParkingIcon(parking)}
               >
-                <Popup className="custom-popup">
-                  <div className="p-1 text-xs">
-                    <div className="font-bold text-slate-900">{parking.name}</div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">
-                      잔여: <span className="font-bold text-emerald-600">{parking.availableSpaces}면</span> / 총 {parking.totalSpaces}면
+                <Popup className="custom-popup" offset={[0, -10]}>
+                  <div className="p-1.5 text-xs max-w-[200px]">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span
+                        className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded text-white ${
+                          parking.isPublic !== false ? 'bg-indigo-600' : 'bg-slate-600'
+                        }`}
+                      >
+                        {parking.isPublic !== false ? '공영' : '민영'}
+                      </span>
+                      <div className="font-extrabold text-slate-900 truncate leading-snug">
+                        {parking.name}
+                      </div>
                     </div>
+
+                    <div className="text-[11px] text-indigo-700 font-extrabold my-1 flex items-center justify-between">
+                      <span>{parking.distance}</span>
+                      <span>
+                        {parking.isRealtime
+                          ? `잔여 ${parking.availableSpaces}/${parking.totalSpaces}면`
+                          : `총 ${parking.totalSpaces}면`}
+                      </span>
+                    </div>
+
+                    <div className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate">
+                      🏷️ {parking.feeInfo || '요금 정보 현장확인'}
+                    </div>
+
                     {parking.address && (
-                      <div className="text-[9px] text-slate-400 mt-0.5 truncate">{parking.address}</div>
+                      <div className="text-[9px] text-slate-400 mt-1 truncate">
+                        {parking.address}
+                      </div>
                     )}
                   </div>
                 </Popup>

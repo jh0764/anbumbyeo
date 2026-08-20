@@ -29,6 +29,8 @@ export interface Parking {
   distanceMeters: number;
   address?: string;
   isRealtime?: boolean;
+  isPublic?: boolean; // true: 공영, false: 민영
+  feeInfo?: string;  // 예: "10분당 500원" 또는 "무료"
 }
 
 export interface Festival {

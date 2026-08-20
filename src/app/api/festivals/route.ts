@@ -96,6 +96,26 @@ function isStrictPublicParking(info: any): boolean {
   return false;
 }
 
+// 요금 정보 정제 유틸
+function parseFeeInfo(info: any): string {
+  const payType = info.pay_type_nm || info.chr_se_cd || '';
+  if (payType.includes('무료')) return '무료';
+
+  const basicTime = info.basic_time || info.gnr_basic_prk_time;
+  const basicCharge = info.basic_charge || info.gnr_basic_prk_chr;
+  const addTime = info.add_time || info.gnr_add_prk_time;
+  const addCharge = info.add_charge || info.gnr_add_prk_chr;
+
+  if (basicTime && basicCharge) {
+    if (basicCharge === '0') return '무료';
+    return `기본 ${basicTime}분 ${Number(basicCharge).toLocaleString()}원`;
+  }
+  if (addTime && addCharge) {
+    return `${addTime}분당 ${Number(addCharge).toLocaleString()}원`;
+  }
+  return '유료 (현장 안내)';
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -181,7 +201,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. API-2 & API-3: 5대 지자체(서울, 경기, 대전, 대구, 부산) 실시간 주차정보 & 전국 주차장 표준 데이터
+    // 3. API-2 & API-3: 주차장 정보 & 실시간 현황 조인
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -223,7 +243,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 순수 공영주차장 정제
+    // 4. 주차장 객체 수집 (공영/민영 판별 및 요금 정보 연동)
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -231,10 +251,9 @@ export async function GET(request: NextRequest) {
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
-      if (!isStrictPublicParking(info)) continue;
-
+      const isPublic = isStrictPublicParking(info);
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
-      if (totalSpaces < 15) continue;
+      if (totalSpaces < 10) continue;
 
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
@@ -252,6 +271,8 @@ export async function GET(request: NextRequest) {
         availableSpaces = Math.floor(totalSpaces * 0.65);
       }
 
+      const feeInfo = parseFeeInfo(info);
+
       combinedParkingLots.push({
         id: code,
         name: cleanedName,
@@ -263,10 +284,12 @@ export async function GET(request: NextRequest) {
         distanceMeters: 0,
         address: info.prl_road_addr_nm || info.l_road_addr_nm || info.prl_jino_addr_nm || '',
         isRealtime,
+        isPublic,
+        feeInfo,
       });
     }
 
-    // 5. searchFestival2 응답 필드 파싱 및 1km 공영주차장 매핑
+    // 5. 2단계 파이프라인 (공영 우선 + 부족 시 민영 최대 2곳 보충)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -298,7 +321,8 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        const nearbyParkingLots: Parking[] = combinedParkingLots
+        // 1km 내 주차장 거리 계산
+        const allNearby = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
             return {
@@ -307,11 +331,22 @@ export async function GET(request: NextRequest) {
               distance: formatWalkingDistanceText(distM),
             };
           })
-          .filter((p) => p.distanceMeters <= 1000)
-          .sort((a, b) => a.distanceMeters - b.distanceMeters)
-          .slice(0, 5);
+          .filter((p) => p.distanceMeters <= 1200)
+          .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-        const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(nearbyParkingLots);
+        // 1차: 공영 주차장 최우선 수집 (최대 5개)
+        const publicParkings = allNearby.filter((p) => p.isPublic).slice(0, 5);
+
+        // 2차: 공영 주차장이 부족할 경우 민영 주차장 최대 2곳 보충
+        let finalParkingLots: Parking[] = [...publicParkings];
+        if (publicParkings.length < 3) {
+          const privateParkings = allNearby
+            .filter((p) => !p.isPublic)
+            .slice(0, 2);
+          finalParkingLots = [...publicParkings, ...privateParkings];
+        }
+
+        const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
 
         const typeIdStr = String(f.contenttypeid || f.contentTypeId || contentTypeId);
@@ -341,12 +376,12 @@ export async function GET(request: NextRequest) {
           lat: festLat,
           lng: festLng,
           crowdLevel,
-          crowdMessage: nearbyParkingLots.length === 0
+          crowdMessage: finalParkingLots.length === 0
             ? '주변 1km 내 공영주차장 정보 확인 중 (대중교통 이용 권장)'
             : crowdMessage,
           category: categoryType,
           imageUrl: f.firstimage || f.firstimage2 || undefined,
-          parkingLots: nearbyParkingLots,
+          parkingLots: finalParkingLots,
           startNum: Number(rawStart),
           endNum: Number(rawEnd),
         };

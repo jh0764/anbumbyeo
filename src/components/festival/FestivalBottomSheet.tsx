@@ -153,19 +153,19 @@ export default function FestivalBottomSheet({
           </p>
         </div>
 
-        {/* 주차장 정보 리스트 영역 (주차장명 말줄임 없이 전체 표기 & 뱃지/버튼 shrink-0) */}
+        {/* 주차장 정보 리스트 영역 (공영/민영 뱃지 -> 명칭 -> 도보시간 -> 잔여석 -> 요금) */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
               <Car className="w-4 h-4 text-indigo-600" />
-              <span>주변 공영주차장 현황 ({sortedParkingLots.length}곳)</span>
+              <span>주변 공영·민영 주차장 현황 ({sortedParkingLots.length}곳)</span>
             </h3>
             <span className="text-[10px] text-slate-400 font-medium">최단거리순</span>
           </div>
 
           {sortedParkingLots.length === 0 ? (
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500 font-medium">
-              반경 1km 이내 공영주차장 정보를 확인 중입니다. 대중교통 이용을 권장합니다.
+              반경 1km 이내 공영/민영 주차장 정보를 확인 중입니다. 대중교통 이용을 권장합니다.
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -173,6 +173,7 @@ export default function FestivalBottomSheet({
                 const isRealtime = parking.isRealtime;
                 const isFull = isRealtime && parking.availableSpaces === 0;
                 const isCrowded = isRealtime && parking.availableSpaces <= 5;
+                const isPublic = parking.isPublic !== false;
 
                 return (
                   <div
@@ -180,22 +181,37 @@ export default function FestivalBottomSheet({
                     className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/70 flex items-start justify-between gap-3 hover:bg-slate-100/80 transition-colors"
                   >
                     <div className="min-w-0 flex-1">
+                      {/* [공영/민영] 뱃지 + 주차장 명칭 + 도보시간 */}
                       <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={clsx(
+                            'text-[9px] font-extrabold px-1.5 py-0.2 rounded text-white shrink-0',
+                            isPublic ? 'bg-indigo-600' : 'bg-slate-600'
+                          )}
+                        >
+                          {isPublic ? '공영' : '민영'}
+                        </span>
                         <span className="text-xs font-bold text-slate-900 break-keep leading-snug">
                           {parking.name}
                         </span>
-                        <span className="text-[10px] text-indigo-600 font-extrabold bg-indigo-50 px-1.5 py-0.5 rounded shrink-0">
-                          {parking.distance}
+                        <span className="text-[10px] text-indigo-600 font-extrabold shrink-0">
+                          ({parking.distance})
                         </span>
                       </div>
+
+                      {/* 요금 태그 */}
+                      <div className="text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-md font-medium inline-block mt-1">
+                        🏷️ {parking.feeInfo || '요금 정보 현장확인'}
+                      </div>
+
                       {parking.address && (
-                        <div className="text-[11px] text-slate-400 mt-1 break-keep">
+                        <div className="text-[10px] text-slate-400 mt-1 break-keep">
                           {parking.address}
                         </div>
                       )}
                     </div>
 
-                    {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 (shrink-0 고정) */}
+                    {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 */}
                     <div className="flex items-center gap-2 shrink-0 mt-0.5">
                       {isRealtime ? (
                         isFull ? (
@@ -213,7 +229,7 @@ export default function FestivalBottomSheet({
                         )
                       ) : (
                         <span className="px-2.5 py-1 bg-slate-200/80 text-slate-700 text-xs font-bold rounded-xl border border-slate-300/60 shrink-0">
-                          총 {parking.totalSpaces}면 (현장 확인)
+                          총 {parking.totalSpaces}면 (현장확인)
                         </span>
                       )}
 

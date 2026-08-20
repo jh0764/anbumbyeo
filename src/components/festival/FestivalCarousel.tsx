@@ -73,7 +73,6 @@ export default function FestivalCarousel({
           const isFestival = fest.categoryType === '축제';
           const status = isFestival ? getFestivalStatus(fest) : 'LIVE';
 
-          // 최단거리 주차장 찾기
           const sortedByDistance = [...fest.parkingLots].sort(
             (a, b) => a.distanceMeters - b.distanceMeters
           );
@@ -93,14 +92,13 @@ export default function FestivalCarousel({
                 onOpenDetail();
               }}
               className={clsx(
-                'snap-center shrink-0 w-[315px] p-3.5 bg-white/95 backdrop-blur-md rounded-2xl border transition-all duration-200 shadow-md cursor-pointer flex flex-col justify-between',
+                'snap-center shrink-0 w-[320px] p-3.5 bg-white/95 backdrop-blur-md rounded-2xl border transition-all duration-200 shadow-md cursor-pointer flex flex-col justify-between',
                 isSelected
                   ? 'border-emerald-600 ring-2 ring-emerald-500/20 scale-[1.01]'
                   : 'border-slate-200 hover:border-slate-300'
               )}
             >
               <div>
-                {/* 상단 뱃지 및 카테고리 / 상태 분기 */}
                 <div className="flex items-center justify-between gap-1 mb-1.5">
                   <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 shrink-0">
                     {fest.region} · {fest.categoryType || fest.category}
@@ -122,7 +120,6 @@ export default function FestivalCarousel({
                       <span>{fest.crowdLevel}</span>
                     </div>
                   ) : (
-                    /* D-Day 뱃지: 단일 Lucide SVG 아이콘 사용 */
                     <div className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1 shadow-xs shrink-0">
                       <Clock className="w-3 h-3 shrink-0" />
                       <span>{getDDayString(fest.startDate)}</span>
@@ -130,7 +127,6 @@ export default function FestivalCarousel({
                   )}
                 </div>
 
-                {/* 명소명 및 일정/운영시간 (말줄임 없이 자연스런 줄바꿈 적용) */}
                 <h3 className="text-sm font-extrabold text-slate-900 leading-snug break-keep">{fest.title}</h3>
                 <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
                   <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
@@ -142,7 +138,7 @@ export default function FestivalCarousel({
                 </p>
               </div>
 
-              {/* 하단 주차 정보 영역 (주차장 이름 말줄임 해제 break-keep 및 뱃지/버튼 shrink-0 고정) */}
+              {/* 하단 주차 정보 영역 (공영/민영 뱃지 -> 명칭 -> 도보시간 -> 잔여석 -> 요금) */}
               <div className="mt-2.5 pt-2 border-t border-slate-100 space-y-1.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-1.5 min-w-0 flex-1">
@@ -150,25 +146,43 @@ export default function FestivalCarousel({
                       <Car className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[10px] text-slate-400 leading-none">
-                        최단거리 · {nearestParking?.distance || '1km 내'}
-                      </div>
                       {nearestParking ? (
-                        <div className="mt-0.5">
-                          {/* 주차장 이름: break-keep으로 2줄 자연 줄바꿈 적용 */}
-                          <div className="text-xs font-bold text-slate-900 leading-snug break-keep">
-                            {nearestParking.name}
+                        <div>
+                          {/* [공영/민영] 뱃지 + 주차장 명칭 + 도보시간 */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span
+                              className={clsx(
+                                'text-[9px] font-extrabold px-1.5 py-0.2 rounded text-white shrink-0',
+                                nearestParking.isPublic !== false ? 'bg-indigo-600' : 'bg-slate-600'
+                              )}
+                            >
+                              {nearestParking.isPublic !== false ? '공영' : '민영'}
+                            </span>
+                            <span className="text-xs font-bold text-slate-900 leading-snug break-keep">
+                              {nearestParking.name}
+                            </span>
+                            <span className="text-[10px] text-indigo-600 font-extrabold shrink-0">
+                              ({nearestParking.distance})
+                            </span>
                           </div>
-                          <div className="text-[10px] text-indigo-600 font-extrabold mt-0.5">
-                            {nearestParking.isRealtime ? (
-                              isNearestFull ? (
-                                <span className="text-red-600 font-bold">만차 (잔여 0면)</span>
+
+                          {/* 잔여면수 및 요금 정보 */}
+                          <div className="flex items-center gap-2 text-[10px] mt-1 flex-wrap">
+                            <span className="font-extrabold text-indigo-900">
+                              {nearestParking.isRealtime ? (
+                                isNearestFull ? (
+                                  <span className="text-red-600 font-bold">만차 (0면)</span>
+                                ) : (
+                                  <span>잔여 {nearestParking.availableSpaces}/{nearestParking.totalSpaces}면</span>
+                                )
                               ) : (
-                                <span>잔여 {nearestParking.availableSpaces}/{nearestParking.totalSpaces}면</span>
-                              )
-                            ) : (
-                              <span className="text-slate-600 font-bold">총 {nearestParking.totalSpaces}면 (현장 확인)</span>
-                            )}
+                                <span className="text-slate-600 font-bold">총 {nearestParking.totalSpaces}면 (현장확인)</span>
+                              )}
+                            </span>
+                            <span className="text-slate-400">·</span>
+                            <span className="text-slate-600 font-medium">
+                              🏷️ {nearestParking.feeInfo || '요금 현장확인'}
+                            </span>
                           </div>
                         </div>
                       ) : (
@@ -177,7 +191,6 @@ export default function FestivalCarousel({
                     </div>
                   </div>
 
-                  {/* 길찾기 버튼: shrink-0 고정 */}
                   {nearestParking && (
                     <button
                       onClick={(e) => handleOpenNavi(e, nearestParking)}
@@ -190,7 +203,6 @@ export default function FestivalCarousel({
                   )}
                 </div>
 
-                {/* 만차 시 차선책 추천 노출 */}
                 {isNearestFull && alternativeParking && (
                   <div className="p-1.5 bg-amber-50 rounded-lg border border-amber-200/80 flex items-center gap-1.5 text-[10px] text-amber-900 font-medium">
                     <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
