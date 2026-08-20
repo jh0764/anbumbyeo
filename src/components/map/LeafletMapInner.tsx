@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking } from '@/types';
-import { Navigation, Plus, Minus, Car } from 'lucide-react';
+import { Plus, Minus } from 'lucide-react';
 
 interface LeafletMapInnerProps {
   festivals: Festival[];
@@ -139,7 +139,7 @@ export default function LeafletMapInner({
   selectedFestivalId,
   onSelectFestival,
 }: LeafletMapInnerProps) {
-  // 축제/명소 목록 중복 제거 (De-duplication)
+  // 축제/명소 목록 중복 제거
   const uniqueFestivals = useMemo(() => {
     const seen = new Set<string>();
     return festivals.filter((f) => {
@@ -161,7 +161,7 @@ export default function LeafletMapInner({
     return [37.5665, 126.9780];
   }, [selectedFestival]);
 
-  // 지도 시각적 클린업: 선택된 축제의 주변 최단거리 주차장 상위 3~5개만 노출
+  // 선택된 축제의 주변 반경 1.5km 이내 주차장 상위 5개만 노출
   const displayParkingLots = useMemo(() => {
     if (!selectedFestival || !selectedFestival.parkingLots) return [];
 
@@ -175,7 +175,7 @@ export default function LeafletMapInner({
       })
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-    return sorted.slice(0, 5); // 상위 5개만 핀 렌더링
+    return sorted.slice(0, 5);
   }, [selectedFestival]);
 
   return (
@@ -194,10 +194,10 @@ export default function LeafletMapInner({
 
         <MapController center={centerCoordinates} />
 
-        {/* 1. 축제/명소 마커 렌더링 (고유 key 적용) */}
+        {/* 1. 축제/명소 마커 렌더링 */}
         {uniqueFestivals.map((fest, idx) => {
           const isSelected = fest.id === selectedFestivalId;
-          const markerKey = `fest-marker-${fest.id || 'id'}-${fest.lat}-${fest.lng}-${idx}`;
+          const markerKey = `fest-${fest.id || 'fest'}-${idx}`;
 
           return (
             <Marker
@@ -211,9 +211,9 @@ export default function LeafletMapInner({
           );
         })}
 
-        {/* 2. 선택된 축제의 주변 최단거리 주차장 상위 5개만 조건부 렌더링 (클린업 적용) */}
+        {/* 2. 선택된 축제의 주변 주차장 마커 렌더링 (고유 key: parking-${parking.id}-${idx}) */}
         {displayParkingLots.map((parking, idx) => {
-          const parkingKey = `parking-marker-${parking.id || 'prk'}-${parking.lat}-${parking.lng}-${idx}`;
+          const parkingKey = `parking-${parking.id || 'prk'}-${idx}`;
 
           return (
             <Marker

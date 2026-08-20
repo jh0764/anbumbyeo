@@ -1,92 +1,76 @@
 import { CrowdLevel } from '@/types';
 
-/**
- * Haversine 공식을 사용한 두 좌표 간 직선 거리 (미터 단위) 계산
- */
+// Haversine 공식을 사용한 두 위경도 간 거리(m) 계산
 export function calculateDistance(
   lat1: number,
-  lng1: number,
+  lon1: number,
   lat2: number,
-  lng2: number
+  lon2: number
 ): number {
-  const R = 6371000; // 지구 반지름 (미터)
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  if (!lat1 || !lon1 || !lat2 || !lon2 || isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) {
+    return Infinity;
+  }
+
+  const R = 6371e3; // 지구 반지름 (m)
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
   return Math.round(R * c);
 }
 
-export interface CalculateCrowdInput {
-  distanceMeters: number;
-  totalSpaces: number;
-  currentUsedSpaces: number;
-}
-
-export interface CrowdCalculationResult {
-  crowdLevel: CrowdLevel;
-  occupancyRate: number; // 0 ~ 100
-  crowdMessage: string;
-}
-
-/**
- * 주차장 점유율 및 거리 가중치 기반 인파 혼잡도 지수 산출
- */
-export function calculateCrowdScore(parkingLots: CalculateCrowdInput[]): CrowdCalculationResult {
-  if (parkingLots.length === 0) {
+// 실제 매핑된 주변 주차장들의 잔여율 기반 실시간 혼잡도 산출
+export function calculateRealCrowdStatus(
+  parkingLots: { totalSpaces: number; availableSpaces: number }[]
+): { crowdLevel: CrowdLevel; crowdMessage: string } {
+  if (!parkingLots || parkingLots.length === 0) {
     return {
       crowdLevel: '보통',
-      occupancyRate: 50,
-      crowdMessage: '실시간 주변 주차장 데이터 수집 중입니다.',
+      crowdMessage: '주변 1.5km 내 실시간 공영주차장 정보 없음 (대중교통 이용 권장)',
     };
   }
 
-  let totalWeightedOccupancy = 0;
-  let totalWeight = 0;
+  const totalSpacesSum = parkingLots.reduce((sum, p) => sum + p.totalSpaces, 0);
+  const availableSpacesSum = parkingLots.reduce((sum, p) => sum + p.availableSpaces, 0);
 
-  for (const parking of parkingLots) {
-    if (parking.totalSpaces <= 0) continue;
-
-    // 거리별 가중치 산출 (300m 이내: 1.0, 600m 이내: 0.7, 1km 이내: 0.4)
-    let weight = 0.4;
-    if (parking.distanceMeters <= 300) {
-      weight = 1.0;
-    } else if (parking.distanceMeters <= 600) {
-      weight = 0.7;
-    }
-
-    const occupancyRate = Math.min(1, Math.max(0, parking.currentUsedSpaces / parking.totalSpaces));
-    totalWeightedOccupancy += occupancyRate * weight;
-    totalWeight += weight;
+  if (totalSpacesSum === 0) {
+    return {
+      crowdLevel: '보통',
+      crowdMessage: '주변 공영주차장 수용 면수 정보 확인 중입니다.',
+    };
   }
 
-  const finalRate = totalWeight > 0 ? (totalWeightedOccupancy / totalWeight) * 100 : 50;
+  const availableRatio = availableSpacesSum / totalSpacesSum;
 
-  let crowdLevel: CrowdLevel = '보통';
-  let crowdMessage = '원활한 관람이 가능합니다.';
+  if (availableSpacesSum === 0) {
+    return {
+      crowdLevel: '매우 혼잡',
+      crowdMessage: '주변 공영주차장이 만차 상태입니다. 대중교통 이용을 적극 권장합니다.',
+    };
+  }
 
-  if (finalRate >= 85) {
-    crowdLevel = '매우 혼잡';
-    crowdMessage = '주변 주차장 점유율이 85% 이상으로 인파가 매우 혼잡합니다. 대중교통 이용을 강력히 권장합니다.';
-  } else if (finalRate >= 65) {
-    crowdLevel = '혼잡';
-    crowdMessage = '주차 공간이 수용 인원에 임계점에 도달하고 있습니다. 서둘러 이동하거나 차선책 주차장을 이용하세요.';
-  } else if (finalRate >= 40) {
-    crowdLevel = '보통';
-    crowdMessage = '주변 주차장 점유율이 보통 수준입니다. 통행에 유의하세요.';
-  } else {
-    crowdLevel = '여유';
-    crowdMessage = '주변 주차장과 진입 도로가 매우 여유롭습니다.';
+  if (availableRatio >= 0.5) {
+    return {
+      crowdLevel: '여유',
+      crowdMessage: '주변 주차장에 잔여 여유석(50% 이상)이 충분합니다.',
+    };
+  }
+
+  if (availableRatio >= 0.2) {
+    return {
+      crowdLevel: '보통',
+      crowdMessage: '주변 주차장에 잔여 여유석이 존재합니다. 원활히 진입 가능합니다.',
+    };
   }
 
   return {
-    crowdLevel,
-    occupancyRate: Math.round(finalRate),
-    crowdMessage,
+    crowdLevel: '혼잡',
+    crowdMessage: '주변 주차장 잔여석이 20% 미만으로 혼잡합니다. 서둘러 방문하세요.',
   };
 }

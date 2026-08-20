@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Festival, Parking, Region, CategoryType } from '@/types';
-import { calculateDistance, calculateCrowdScore } from '@/lib/geoUtils';
+import { calculateDistance, calculateRealCrowdStatus } from '@/lib/geoUtils';
 import { MOCK_FESTIVALS } from '@/services/mockData';
 
 // Koreaconnect 공공 API 엔드포인트 URL
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mapX = searchParams.get('mapX') || '126.9780';
     const mapY = searchParams.get('mapY') || '37.5665';
-    const radius = searchParams.get('radius') || '20000';
+    const radius = searchParams.get('radius') || '30000';
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 주차장 실데이터 통합
+    // 좌표가 유효한 주차장만 통합
     const combinedParkingLots: Parking[] = [];
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
@@ -196,7 +196,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. 관광지/축제 100% 공공 실데이터 매핑 및 반경 1km 주차장 조인
+    // 3. 축제 기준 주변 1.5km 이내 실제 주차장 매핑 (더미 Fallback 완전 제거)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -204,6 +204,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
+        // 실제 반경 1.5km (1,500m) 이내 주차장 매핑 및 최단거리 정렬
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -213,33 +214,23 @@ export async function GET(request: NextRequest) {
               distance: distM < 1000 ? `${distM}m` : `${(distM / 1000).toFixed(1)}km`,
             };
           })
-          .filter((p) => p.distanceMeters <= 1000)
-          .sort((a, b) => a.distanceMeters - b.distanceMeters);
+          .filter((p) => p.distanceMeters <= 1500)
+          .sort((a, b) => a.distanceMeters - b.distanceMeters)
+          .slice(0, 5); // 상위 5개
 
-        const crowdInput = nearbyParkingLots.map((p) => {
-          const used = p.totalSpaces - p.availableSpaces;
-          return {
-            distanceMeters: p.distanceMeters,
-            totalSpaces: p.totalSpaces,
-            currentUsedSpaces: used,
-          };
-        });
-
-        const { crowdLevel, crowdMessage } = calculateCrowdScore(crowdInput);
+        // 실제 잔여율 기반 혼잡도 계산 (더미 fallback 완전히 배제)
+        const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(nearbyParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
 
         const contentTypeIdStr = String(f.contenttypeid || f.contentTypeId || '12');
         const categoryType = getCategoryTypeFromContentTypeId(contentTypeIdStr);
 
-        const todayStr = '2026-08-20';
         const startDate = f.eventstartdate && f.eventstartdate.length >= 8
           ? `${f.eventstartdate.slice(0, 4)}-${f.eventstartdate.slice(4, 6)}-${f.eventstartdate.slice(6, 8)}`
           : '2026-01-01';
         const endDate = f.eventenddate && f.eventenddate.length >= 8
           ? `${f.eventenddate.slice(0, 4)}-${f.eventenddate.slice(4, 6)}-${f.eventenddate.slice(6, 8)}`
           : '2026-12-31';
-
-        const fallbackParking = MOCK_FESTIVALS[idx % MOCK_FESTIVALS.length].parkingLots;
 
         return {
           id: f.contentid || `api-spot-${idx}`,
@@ -258,7 +249,7 @@ export async function GET(request: NextRequest) {
           crowdMessage,
           category: categoryType,
           imageUrl: f.firstimage || f.firstimage2 || undefined,
-          parkingLots: nearbyParkingLots.length > 0 ? nearbyParkingLots : fallbackParking,
+          parkingLots: nearbyParkingLots, // 타지역 더미 fallback 제거!
         };
       });
 
