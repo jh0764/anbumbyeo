@@ -28,7 +28,7 @@ export async function fetchFestivals(params?: FetchFestivalsParams): Promise<Fes
 
     return [];
   } catch (error) {
-    console.error('Error fetching festivals:', error);
+    console.error('[Client Error] fetchFestivals failed:', error);
     return [];
   }
 }

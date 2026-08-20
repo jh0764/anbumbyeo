@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Festival, Parking, Region } from '@/types';
 import { calculateDistance, calculateCrowdScore } from '@/lib/geoUtils';
-import { MOCK_FESTIVALS } from '@/services/mockData';
 
-const API_USER_KEY = process.env.TOUR_API_KEY || '';
+const API_USER_KEY = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
 
-// API 엔드포인트
+// Koreaconnect 공공 API 엔드포인트
 const FESTIVAL_API_URL =
   'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
 const PARKING_INFO_API_URL =
@@ -13,7 +12,7 @@ const PARKING_INFO_API_URL =
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722503DCP/LOGIS/api/v1/parking/status';
 
-// 주소/좌표 기반 권역 맵핑 함수
+// 주소/좌표 기반 행정 권역 구분 유틸
 function getRegionFromAddress(address: string, lat: number, lng: number): Exclude<Region, '전체'> {
   if (address.includes('서울') || address.includes('경기') || address.includes('인천')) {
     return '서울·수도권';
@@ -34,11 +33,11 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Exclud
     return '제주';
   }
 
-  // 좌표 기준 폴백
+  // 좌표 기준 판정
   if (lat > 37.0) return '서울·수도권';
-  if (lng > 128.5 && lat > 37.0) return '강원';
-  if (lng > 128.5) return '경상';
-  if (lat < 35.5) return '전라';
+  if (lng > 128.3 && lat > 37.0) return '강원';
+  if (lng > 128.3) return '경상';
+  if (lat < 35.8) return '전라';
   return '서울·수도권';
 }
 
@@ -50,15 +49,14 @@ export async function GET(request: NextRequest) {
     const radius = searchParams.get('radius') || '20000';
 
     if (!API_USER_KEY) {
-      console.warn('[API Warning] TOUR_API_KEY가 설정되지 않아 목업 데이터를 반환합니다.');
       return NextResponse.json({
-        success: true,
-        source: 'mock',
-        data: MOCK_FESTIVALS,
-      });
+        success: false,
+        error: 'TOUR_API_KEY is missing in environment variables',
+        data: [],
+      }, { status: 500 });
     }
 
-    // 1. API-1: 위치기반 축제 목록 조회
+    // 1. API-1: 위치기반 축제 정보 조회
     const festivalParams = new URLSearchParams({
       api_user_key_id: API_USER_KEY,
       MobileOS: 'ETC',
@@ -77,29 +75,29 @@ export async function GET(request: NextRequest) {
     });
 
     if (!festivalRes.ok) {
-      throw new Error(`Festival API failed with status ${festivalRes.status}`);
+      throw new Error(`Festival API HTTP Error: ${festivalRes.status}`);
     }
 
-    const festivalData = await festivalRes.json();
-    const rawFestivals =
-      festivalData?.response?.body?.items?.item ||
-      festivalData?.items?.item ||
-      festivalData?.body?.items?.item ||
+    const festivalJson = await festivalRes.json();
+    const rawItems =
+      festivalJson?.response?.body?.items?.item ||
+      festivalJson?.items?.item ||
+      festivalJson?.body?.items?.item ||
       [];
 
-    const festivalListArray = Array.isArray(rawFestivals) ? rawFestivals : [rawFestivals];
+    const festivalListArray = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
 
-    // 2. API-3 & API-2: 주차장 기본 정보 및 실시간 현황 조인
+    // 2. API-3 (통합 주차장 기본정보) & API-2 (실시간 주차현황) 서버사이드 호출
     const parkingInfoParams = new URLSearchParams({
       api_user_key_id: API_USER_KEY,
-      pageNo: '1',
-      pageSize: '1000',
+      page_no: '1',
+      page_size: '1000',
     });
 
     const parkingStatusParams = new URLSearchParams({
       api_user_key_id: API_USER_KEY,
-      pageNo: '1',
-      pageSize: '1000',
+      page_no: '1',
+      page_size: '1000',
     });
 
     const [infoRes, statusRes] = await Promise.allSettled([
@@ -108,54 +106,58 @@ export async function GET(request: NextRequest) {
     ]);
 
     let parkingInfoList: any[] = [];
-    let parkingStatusMap = new Map<string, any>();
+    const parkingStatusMap = new Map<string, any>();
 
     if (infoRes.status === 'fulfilled' && infoRes.value.ok) {
-      const infoData = await infoRes.value.json();
-      const rawInfo = infoData?.data || infoData?.items || [];
-      parkingInfoList = Array.isArray(rawInfo) ? rawInfo : [rawInfo];
+      const infoJson = await infoRes.value.json();
+      const rawInfo = infoJson?.data || infoJson?.items || [];
+      parkingInfoList = Array.isArray(rawInfo) ? rawInfo : rawInfo ? [rawInfo] : [];
     }
 
     if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
-      const statusData = await statusRes.value.json();
-      const rawStatus = statusData?.data || statusData?.items || [];
-      const statusList = Array.isArray(rawStatus) ? rawStatus : [rawStatus];
+      const statusJson = await statusRes.value.json();
+      const rawStatus = statusJson?.data || statusJson?.items || [];
+      const statusList = Array.isArray(rawStatus) ? rawStatus : rawStatus ? [rawStatus] : [];
 
       for (const st of statusList) {
-        if (st.std_prk_mg_no) {
-          parkingStatusMap.set(st.std_prk_mg_no, st);
+        const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
+        if (code) {
+          parkingStatusMap.set(code, st);
         }
       }
     }
 
-    // 주차장 데이터 통합 (Info + Status)
+    // 주차장 데이터 통합 (std_prl_cd 기준 매핑)
     const combinedParkingLots: Parking[] = [];
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
-      const id = info.std_prk_mg_no || `prk-${Math.random()}`;
-      const status = parkingStatusMap.get(id);
+      const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
+      const status = parkingStatusMap.get(code);
 
       const totalSpaces = parseInt(info.sum_park_cnt || status?.sum_park_cnt || '100', 10);
-      const curUseSpaces = parseInt(status?.cur_use_prk_cnt || '0', 10);
+      const curUseSpaces = parseInt(
+        status?.sum_curr_use_park_cnt || status?.cur_use_prk_cnt || '0',
+        10
+      );
       const availableSpaces = Math.max(0, totalSpaces - curUseSpaces);
 
       combinedParkingLots.push({
-        id,
-        name: info.prk_nm || '공영주차장',
+        id: code,
+        name: info.prl_nm || info.prk_nm || '공영주차장',
         lat,
         lng,
         totalSpaces,
         availableSpaces,
         distance: '',
         distanceMeters: 0,
-        address: info.l_road_addr_nm || '',
+        address: info.prl_road_addr_nm || info.l_road_addr_nm || info.prl_jino_addr_nm || '',
       });
     }
 
-    // 3. 축제와 주차장 거리 계산 및 혼잡도 산출
+    // 3. 각 축제별 1km 이내 주차장 매핑 & 혼잡도 엔지니어링 산출
     const resultFestivals: Festival[] = festivalListArray
       .filter((f: any) => f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -163,7 +165,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 반경 1km 이내 주차장 필터링 및 거리 계산
+        // 반경 1km (1000m) 이내 주차장 필터링 및 거리 계산
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -173,10 +175,10 @@ export async function GET(request: NextRequest) {
               distance: distM < 1000 ? `${distM}m` : `${(distM / 1000).toFixed(1)}km`,
             };
           })
-          .filter((p) => p.distanceMeters <= 1500) // 1.5km 이내
+          .filter((p) => p.distanceMeters <= 1000)
           .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-        // 혼잡도 산출
+        // 거리 가중치 기반 혼잡도 계산
         const crowdInput = nearbyParkingLots.map((p) => {
           const used = p.totalSpaces - p.availableSpaces;
           return {
@@ -189,7 +191,7 @@ export async function GET(request: NextRequest) {
         const { crowdLevel, crowdMessage } = calculateCrowdScore(crowdInput);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
 
-        // 기본 날짜 제공 (API 데이터 미포함 시)
+        // 날짜 포맷팅
         const todayStr = '2026-08-20';
         const startDate = f.eventstartdate
           ? `${f.eventstartdate.slice(0, 4)}-${f.eventstartdate.slice(4, 6)}-${f.eventstartdate.slice(6, 8)}`
@@ -213,25 +215,24 @@ export async function GET(request: NextRequest) {
           crowdMessage,
           category: '지역축제',
           imageUrl: f.firstimage || f.firstimage2 || undefined,
-          parkingLots: nearbyParkingLots.length > 0 ? nearbyParkingLots : MOCK_FESTIVALS[idx % MOCK_FESTIVALS.length].parkingLots,
+          parkingLots: nearbyParkingLots,
         };
       });
 
-    const finalData = resultFestivals.length > 0 ? resultFestivals : MOCK_FESTIVALS;
-
     return NextResponse.json({
       success: true,
-      source: 'api',
-      count: finalData.length,
-      data: finalData,
+      count: resultFestivals.length,
+      data: resultFestivals,
     });
-  } catch (error) {
-    console.error('[API Error] /api/festivals 라우터 처리 중 오류 발생:', error);
-    return NextResponse.json({
-      success: true,
-      source: 'fallback',
-      message: '공공 API 연결 지연으로 안전 목업 데이터를 제공합니다.',
-      data: MOCK_FESTIVALS,
-    });
+  } catch (error: any) {
+    console.error('[API Error] /api/festivals 백엔드 파이프라인 에러:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'Internal Server Error',
+        data: [],
+      },
+      { status: 500 }
+    );
   }
 }
