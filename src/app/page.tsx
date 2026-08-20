@@ -34,16 +34,19 @@ export default function Home() {
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 백엔드 API 호출 및 실데이터 수집 함수 (권역별 mapX, mapY 좌표 전달)
-  const loadFestivals = useCallback(async (cat: CategoryType, reg: Region) => {
+  // 백엔드 API 호출 및 실데이터 수집 함수
+  const loadFestivals = useCallback(async (cat: CategoryType, reg: Region, overrideCoords?: { mapX: number; mapY: number }) => {
     setIsLoading(true);
     try {
-      const coords = REGION_COORDINATES[reg] || REGION_COORDINATES['전체'];
+      const coords = overrideCoords
+        ? { mapX: overrideCoords.mapX.toString(), mapY: overrideCoords.mapY.toString() }
+        : REGION_COORDINATES[reg] || REGION_COORDINATES['전체'];
+
       const data = await fetchFestivals({
         category: cat,
         mapX: parseFloat(coords.mapX),
         mapY: parseFloat(coords.mapY),
-        radius: 30000,
+        radius: 15000,
       });
 
       if (data && Array.isArray(data)) {
@@ -59,6 +62,12 @@ export default function Home() {
   // 카테고리 또는 권역 변경 시 백엔드 재호출 및 포커스 초기화
   useEffect(() => {
     loadFestivals(selectedCategory, selectedRegion);
+  }, [selectedCategory, selectedRegion, loadFestivals]);
+
+  // '이 지역에서 재검색' 처리 핸들러
+  const handleSearchArea = useCallback((center: { lat: number; lng: number }) => {
+    loadFestivals(selectedCategory, selectedRegion, { mapX: center.lng, mapY: center.lat });
+    setSelectedFestivalId(null);
   }, [selectedCategory, selectedRegion, loadFestivals]);
 
   // 권역 -> 카테고리 -> 상태 순 필터링
@@ -142,7 +151,7 @@ export default function Home() {
           }}
         />
 
-        {/* 진행 상태(LIVE / UPCOMING) 탭은 '축제' 카테고리일 때만 조건부 노출 */}
+        {/* 진행 상태(LIVE / UPCOMING) 탭은 '축제' 카테고일 때만 조건부 노출 */}
         {selectedCategory === '축제' && (
           <StatusFilter
             selectedStatus={selectedStatus}
@@ -185,6 +194,7 @@ export default function Home() {
             festivals={displayFestivals}
             selectedFestivalId={selectedFestivalId}
             onSelectFestival={(id) => setSelectedFestivalId(id)}
+            onSearchArea={handleSearchArea}
           />
         )}
 

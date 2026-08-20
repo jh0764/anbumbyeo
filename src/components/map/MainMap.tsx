@@ -7,6 +7,7 @@ interface MainMapProps {
   festivals: Festival[];
   selectedFestivalId: string | null;
   onSelectFestival: (id: string | null) => void;
+  onSearchArea?: (center: { lat: number; lng: number }) => void;
 }
 
 // Next.js dynamic import (SSR 방지)
@@ -24,6 +25,7 @@ export default function MainMap({
   festivals,
   selectedFestivalId,
   onSelectFestival,
+  onSearchArea,
 }: MainMapProps) {
   return (
     <div className="w-full h-full relative overflow-hidden">
@@ -31,6 +33,7 @@ export default function MainMap({
         festivals={festivals}
         selectedFestivalId={selectedFestivalId}
         onSelectFestival={onSelectFestival}
+        onSearchArea={onSearchArea}
       />
     </div>
   );

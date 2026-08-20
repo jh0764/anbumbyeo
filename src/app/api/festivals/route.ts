@@ -40,11 +40,10 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Exclud
   return '서울·수도권';
 }
 
-// 카테고리에 따른 공공데이터 contentTypeId 매핑
 function getContentTypeIdFromCategory(category?: string | null): string {
-  if (category === '축제') return '15';       // 축제/공연/행사
-  if (category === '문화시설') return '14';   // 박물관/미술관/공연장/문화재
-  if (category === '공원·나들이') return '12'; // 관광지/자연명소/공원
+  if (category === '축제') return '15';
+  if (category === '문화시설') return '14';
+  if (category === '공원·나들이') return '12';
   return '15';
 }
 
@@ -89,7 +88,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mapX = searchParams.get('mapX') || '126.9780';
     const mapY = searchParams.get('mapY') || '37.5665';
-    const radius = searchParams.get('radius') || '30000';
+    const radius = searchParams.get('radius') || '15000';
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
@@ -104,42 +103,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 1. 카테고리별 contentTypeId 파라미터 매핑
     const contentTypeId = requestedContentTypeId || getContentTypeIdFromCategory(categoryParam);
-    const isFestivalCategory = contentTypeId === '15';
+    const isFestivalCategory = categoryParam === '축제' || contentTypeId === '15';
 
     let rawList: any[] = [];
 
-    // 위치기반 locationBasedList2 API 호출 (mapX, mapY, radius, contentTypeId 적용)
-    const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
-    try {
-      const res = await fetch(locationUrl, {
-        cache: 'no-store',
-        headers: {
-          api_user_key_id: apiKeyHeader,
-          Accept: 'application/json',
-        },
-      });
-
-      if (res.ok) {
-        const rawText = await res.text();
-        try {
-          const json = JSON.parse(rawText);
-          const items =
-            json?.response?.body?.items?.item ||
-            json?.items?.item ||
-            json?.body?.items?.item ||
-            json?.data;
-          const itemArr = Array.isArray(items) ? items : items ? [items] : [];
-          rawList.push(...itemArr);
-        } catch {}
-      }
-    } catch (err) {
-      console.error('[API Error] locationBasedList2 호출 예외:', err);
-    }
-
-    // 만약 축제 카테고리인데 위치기반 결과가 0건이면 searchFestival2 전국 조회 병행 (예정 축제 0건 방지)
-    if (isFestivalCategory && rawList.length === 0) {
+    // 1. 축제(category === '축제') 조회 시: searchFestival2 전용 API 호출
+    if (isFestivalCategory) {
       const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=20260101&numOfRows=100&arrange=A`;
       try {
         const res = await fetch(festivalSearchUrl, {
@@ -159,16 +129,42 @@ export async function GET(request: NextRequest) {
               json?.items?.item ||
               json?.body?.items?.item ||
               json?.data;
-            const itemArr = Array.isArray(items) ? items : items ? [items] : [];
-            rawList.push(...itemArr);
+            rawList = Array.isArray(items) ? items : items ? [items] : [];
           } catch {}
         }
       } catch (err) {
-        console.error('[API Error] searchFestival2 2차 호출 예외:', err);
+        console.error('[API Error] searchFestival2 호출 예외:', err);
+      }
+    } else {
+      // 2. 공원·나들이('12') / 문화시설('14') 조회 시: locationBasedList2 호출
+      const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
+      try {
+        const res = await fetch(locationUrl, {
+          cache: 'no-store',
+          headers: {
+            api_user_key_id: apiKeyHeader,
+            Accept: 'application/json',
+          },
+        });
+
+        if (res.ok) {
+          const rawText = await res.text();
+          try {
+            const json = JSON.parse(rawText);
+            const items =
+              json?.response?.body?.items?.item ||
+              json?.items?.item ||
+              json?.body?.items?.item ||
+              json?.data;
+            rawList = Array.isArray(items) ? items : items ? [items] : [];
+          } catch {}
+        }
+      } catch (err) {
+        console.error('[API Error] locationBasedList2 호출 예외:', err);
       }
     }
 
-    // 2. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
+    // 3. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -210,7 +206,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 순수 공영주차장 정제
+    // 순수 공영주차장 정제
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -274,7 +270,6 @@ export async function GET(request: NextRequest) {
         const startNum = Number(rawStart);
         const endNum = Number(rawEnd);
 
-        // 유효 날짜가 아니면 제외
         if (isNaN(startNum) || isNaN(endNum) || rawStart.length < 8 || rawEnd.length < 8) {
           return false;
         }
@@ -291,7 +286,6 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 1km 이내 주차장 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);

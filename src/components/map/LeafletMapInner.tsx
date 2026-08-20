@@ -1,16 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { useEffect, useRef, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking } from '@/types';
-import { Plus, Minus } from 'lucide-react';
+import { Plus, Minus, Search, RefreshCw } from 'lucide-react';
 
 interface LeafletMapInnerProps {
   festivals: Festival[];
   selectedFestivalId: string | null;
   onSelectFestival: (id: string | null) => void;
+  onSearchArea?: (center: { lat: number; lng: number }) => void;
 }
 
 // 1. Leaflet Custom Icon 생성 함수
@@ -77,7 +78,7 @@ function createParkingIcon(parking: Parking) {
   });
 }
 
-// 2. Focus Mode: 도보 700m 주차장 + 축제 핀 타이트한 FitBounds 적용
+// 2. Focus Mode FitBounds 카메라 컨트롤러
 function FocusCameraController({
   selectedFestival,
   parkingLots,
@@ -121,7 +122,57 @@ function FocusCameraController({
   return null;
 }
 
-// 3. 우측 상단 플로팅 컨트롤
+// 3. 지도 이동(moveend) 이벤트 수신 및 '이 지역에서 재검색' 버튼 컴포넌트
+function MapEventsController({
+  onSearchArea,
+}: {
+  onSearchArea?: (center: { lat: number; lng: number }) => void;
+}) {
+  const map = useMap();
+  const [showSearchBtn, setShowSearchBtn] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useMapEvents({
+    dragend: () => {
+      setShowSearchBtn(true);
+    },
+    zoomend: () => {
+      setShowSearchBtn(true);
+    },
+  });
+
+  const handleSearch = () => {
+    if (!onSearchArea) return;
+    setIsSearching(true);
+    const center = map.getCenter();
+    onSearchArea({ lat: center.lat, lng: center.lng });
+    setTimeout(() => {
+      setIsSearching(false);
+      setShowSearchBtn(false);
+    }, 600);
+  };
+
+  if (!showSearchBtn || !onSearchArea) return null;
+
+  return (
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] pointer-events-auto">
+      <button
+        onClick={handleSearch}
+        disabled={isSearching}
+        className="px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full text-xs font-extrabold shadow-lg backdrop-blur-md border border-slate-700/80 flex items-center gap-1.5 transition-all duration-200 hover:scale-105 active:scale-95"
+      >
+        {isSearching ? (
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+        ) : (
+          <Search className="w-3.5 h-3.5 text-emerald-400" />
+        )}
+        <span>이 지역에서 재검색</span>
+      </button>
+    </div>
+  );
+}
+
+// 4. 우측 상단 플로팅 컨트롤 (나침반, 줌인/아웃)
 function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
   const map = useMap();
 
@@ -159,6 +210,7 @@ export default function LeafletMapInner({
   festivals,
   selectedFestivalId,
   onSelectFestival,
+  onSearchArea,
 }: LeafletMapInnerProps) {
   // 축제/명소 목록 중복 제거
   const uniqueFestivals = useMemo(() => {
@@ -214,6 +266,8 @@ export default function LeafletMapInner({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+
+        <MapEventsController onSearchArea={onSearchArea} />
 
         <FocusCameraController
           selectedFestival={selectedFestival}
