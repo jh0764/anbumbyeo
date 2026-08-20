@@ -14,18 +14,22 @@ import { getFestivalStatus } from '@/lib/festivalUtils';
 import { Info } from 'lucide-react';
 
 const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
-  '서울·수도권': { mapX: '126.9780', mapY: '37.5665' },
+  서울: { mapX: '126.9780', mapY: '37.5665' },
+  '경기·인천': { mapX: '127.0096', mapY: '37.2636' },
+  부산: { mapX: '129.0756', mapY: '35.1796' },
+  대구: { mapX: '128.6014', mapY: '35.8714' },
+  대전: { mapX: '127.3845', mapY: '36.3504' },
   강원: { mapX: '128.8760', mapY: '37.7519' },
-  충청: { mapX: '127.3845', mapY: '36.3504' },
+  충청: { mapX: '126.6912', mapY: '36.0805' },
   전라: { mapX: '126.9056', mapY: '35.1595' },
-  경상: { mapX: '129.0756', mapY: '35.1796' },
+  경상: { mapX: '129.2247', mapY: '35.8562' },
   제주: { mapX: '126.5312', mapY: '33.4996' },
 };
 
 export default function Home() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [selectedRegion, setSelectedRegion] = useState<Region>('서울·수도권');
+  const [selectedRegion, setSelectedRegion] = useState<Region>('서울');
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('축제');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
@@ -38,7 +42,7 @@ export default function Home() {
     try {
       const coords = overrideCoords
         ? { mapX: overrideCoords.mapX.toString(), mapY: overrideCoords.mapY.toString() }
-        : REGION_COORDINATES[reg] || REGION_COORDINATES['서울·수도권'];
+        : REGION_COORDINATES[reg] || REGION_COORDINATES['서울'];
 
       const data = await fetchFestivals({
         category: cat,
@@ -58,7 +62,7 @@ export default function Home() {
     }
   }, []);
 
-  // 카테고리 또는 권역 변경 시 백엔드 재호출 및 포커스 초기화
+  // 카테고리 또는 권역 변경 시 백엔드 재호출 (선택 지역 중심 유지)
   useEffect(() => {
     loadFestivals(selectedCategory, selectedRegion);
   }, [selectedCategory, selectedRegion, loadFestivals]);

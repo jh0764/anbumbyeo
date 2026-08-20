@@ -1,6 +1,16 @@
 export type CrowdLevel = '여유' | '보통' | '혼잡' | '매우 혼잡';
 
-export type Region = '서울·수도권' | '강원' | '충청' | '전라' | '경상' | '제주';
+export type Region =
+  | '서울'
+  | '경기·인천'
+  | '부산'
+  | '대구'
+  | '대전'
+  | '강원'
+  | '충청'
+  | '전라'
+  | '경상'
+  | '제주';
 
 export type CategoryType = '축제' | '공원·나들이' | '문화시설';
 
@@ -29,7 +39,7 @@ export interface Festival {
   period: string; // 예: "2026.09.05 ~ 2026.09.10" 또는 "연중무휴"
   locationName: string;
   address: string;
-  region: Exclude<Region, '전체'> | string;
+  region: Region | string;
   contentTypeId?: string;
   categoryType: CategoryType;
   lat: number;

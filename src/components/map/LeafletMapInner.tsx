@@ -15,13 +15,17 @@ interface LeafletMapInnerProps {
   onSearchArea?: (center: { lat: number; lng: number }) => void;
 }
 
-// 권역별 대표 중심 카메라 좌표
+// 10개 권역 대표 중심 카메라 좌표
 const REGION_CAMERA: Record<Region, { lat: number; lng: number; zoom: number }> = {
-  '서울·수도권': { lat: 37.5665, lng: 126.9780, zoom: 10 },
+  서울: { lat: 37.5665, lng: 126.9780, zoom: 11 },
+  '경기·인천': { lat: 37.2636, lng: 127.0096, zoom: 10 },
+  부산: { lat: 35.1796, lng: 129.0756, zoom: 11 }, // 해운대/광안리 중심
+  대구: { lat: 35.8714, lng: 128.6014, zoom: 11 },
+  대전: { lat: 36.3504, lng: 127.3845, zoom: 11 },
   강원: { lat: 37.7519, lng: 128.8760, zoom: 10 },
-  충청: { lat: 36.3504, lng: 127.3845, zoom: 10 },
+  충청: { lat: 36.0805, lng: 126.6912, zoom: 10 },
   전라: { lat: 35.1595, lng: 126.9056, zoom: 10 },
-  경상: { lat: 35.1796, lng: 129.0756, zoom: 10 },
+  경상: { lat: 35.8562, lng: 129.2247, zoom: 10 },
   제주: { lat: 33.4996, lng: 126.5312, zoom: 10 },
 };
 
@@ -133,7 +137,7 @@ function CameraController({
     }
   }, [selectedFestival, parkingLots, map]);
 
-  // 권역 탭 선택 시 카메라 위치 연동
+  // 권역 탭 선택 시 카메라 위치 연동 (카테고리 변경 시 서울 튕김 완전 방지!)
   useEffect(() => {
     if (selectedRegion && prevRegionRef.current !== selectedRegion && !selectedFestival) {
       prevRegionRef.current = selectedRegion;
@@ -234,7 +238,7 @@ function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
 export default function LeafletMapInner({
   festivals,
   selectedFestivalId,
-  selectedRegion,
+  selectedRegion = '서울',
   onSelectFestival,
   onSearchArea,
 }: LeafletMapInnerProps) {
@@ -254,8 +258,13 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  // 기본 지도 초기 위치: 서울·수도권 중심
-  const defaultCenter = useRef<[number, number]>([37.5665, 126.9780]).current;
+  // 선택 지역에 기반한 초기 좌표 (카테고리 전환 시 서울 튕김 100% 방지)
+  const initialCenter = useMemo(() => {
+    const cam = REGION_CAMERA[selectedRegion] || REGION_CAMERA['서울'];
+    return [cam.lat, cam.lng] as [number, number];
+  }, [selectedRegion]);
+
+  const defaultCenter = useRef<[number, number]>(initialCenter).current;
 
   // Focus Mode: 도보 700m 이내 주차장만 렌더링
   const displayParkingLots = useMemo(() => {
@@ -279,7 +288,7 @@ export default function LeafletMapInner({
     <div className="w-full h-full relative overflow-hidden">
       <MapContainer
         center={defaultCenter}
-        zoom={10}
+        zoom={REGION_CAMERA[selectedRegion]?.zoom || 11}
         preferCanvas={true}
         zoomControl={false}
         className="w-full h-full z-0"

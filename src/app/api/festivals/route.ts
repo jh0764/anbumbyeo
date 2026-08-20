@@ -12,32 +12,47 @@ const PARKING_INFO_API_URL =
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
-function getRegionFromAddress(address: string, lat: number, lng: number): Exclude<Region, '전체'> {
-  if (!address) return '서울·수도권';
-  if (address.includes('서울') || address.includes('경기') || address.includes('인천')) {
-    return '서울·수도권';
+function getRegionFromAddress(address: string, lat: number, lng: number): Region {
+  if (!address) return '서울';
+
+  if (address.includes('부산') || address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장')) {
+    return '부산';
   }
-  if (address.includes('강원')) {
+  if (address.includes('대구') || address.includes('수성') || address.includes('달서')) {
+    return '대구';
+  }
+  if (address.includes('대전') || address.includes('유성')) {
+    return '대전';
+  }
+  if (address.includes('서울')) {
+    return '서울';
+  }
+  if (address.includes('경기') || address.includes('인천') || address.includes('수원') || address.includes('구리')) {
+    return '경기·인천';
+  }
+  if (address.includes('강원') || address.includes('강릉') || address.includes('춘천') || address.includes('속초')) {
     return '강원';
   }
-  if (address.includes('충청') || address.includes('대전') || address.includes('세종') || address.includes('서천') || address.includes('보령') || address.includes('충남') || address.includes('충북')) {
+  if (address.includes('충청') || address.includes('세종') || address.includes('서천') || address.includes('보령') || address.includes('충남') || address.includes('충북') || address.includes('청주')) {
     return '충청';
   }
-  if (address.includes('전라') || address.includes('광주') || address.includes('전남') || address.includes('전북') || address.includes('군산') || address.includes('여수')) {
+  if (address.includes('전라') || address.includes('광주') || address.includes('전남') || address.includes('전북') || address.includes('군산') || address.includes('여수') || address.includes('전주')) {
     return '전라';
   }
-  if (address.includes('경상') || address.includes('부산') || address.includes('대구') || address.includes('울산') || address.includes('경남') || address.includes('경북') || address.includes('경주')) {
+  if (address.includes('경상') || address.includes('울산') || address.includes('경남') || address.includes('경북') || address.includes('경주') || address.includes('포항') || address.includes('창원')) {
     return '경상';
   }
-  if (address.includes('제주')) {
+  if (address.includes('제주') || address.includes('서귀포')) {
     return '제주';
   }
 
-  if (lat > 37.0) return '서울·수도권';
-  if (lng > 128.3 && lat > 37.0) return '강원';
-  if (lng > 128.3) return '경상';
+  if (lat > 37.3) return '서울';
+  if (lat > 36.8 && lng < 127.5) return '경기·인천';
+  if (lng > 128.5 && lat > 37.0) return '강원';
+  if (lng > 128.8 && lat < 35.5) return '부산';
+  if (lng > 128.3 && lat < 36.0) return '경상';
   if (lat < 35.8) return '전라';
-  return '서울·수도권';
+  return '서울';
 }
 
 function getContentTypeIdFromCategory(category?: string | null): string {
@@ -208,7 +223,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 순수 공영주차장 정제 (5대 지자체 실시간 + 외지역 표준데이터 Fallback)
+    // 4. 순수 공영주차장 정제
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -234,7 +249,6 @@ export async function GET(request: NextRequest) {
         );
         availableSpaces = Math.max(0, totalSpaces - occupied);
       } else {
-        // 5대 지자체 외 지역 Fallback: 주차면수 보존
         availableSpaces = Math.floor(totalSpaces * 0.65);
       }
 
@@ -273,7 +287,6 @@ export async function GET(request: NextRequest) {
           return false;
         }
 
-        // [종료 축제]: endNum < todayNum 인 축제 100% 필터링 배제
         if (endNum < todayNum) {
           return false;
         }
@@ -285,7 +298,6 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 1km 이내 공영주차장 최단거리순 상위 5개 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -340,7 +352,6 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    // 개막 예정 축제 D-Day 오름차순 정렬
     const sortedFestivals = resultFestivals.sort((a, b) => {
       const aStart = a.startNum || 0;
       const bStart = b.startNum || 0;
@@ -352,8 +363,6 @@ export async function GET(request: NextRequest) {
       }
       return bStart - aStart;
     });
-
-    console.log('[실시간 + 표준 Fallback 수집 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
