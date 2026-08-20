@@ -8,12 +8,22 @@ interface RegionFilterProps {
   onSelectRegion: (region: Region) => void;
 }
 
-const REGIONS: Region[] = ['전체', '서울·수도권', '강원', '충청', '전라', '경상', '제주'];
+const REGIONS: Region[] = [
+  '서울·수도권',
+  '강원',
+  '충청',
+  '전라',
+  '경상',
+  '제주',
+];
 
-export default function RegionFilter({ selectedRegion, onSelectRegion }: RegionFilterProps) {
+export default function RegionFilter({
+  selectedRegion,
+  onSelectRegion,
+}: RegionFilterProps) {
   return (
-    <div className="w-full bg-white/95 backdrop-blur-md border-b border-slate-200/60 px-2.5 py-1 z-10 shadow-2xs">
-      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+    <div className="w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 py-2 overflow-x-auto no-scrollbar z-10 shadow-2xs">
+      <div className="flex items-center gap-2">
         {REGIONS.map((region) => {
           const isSelected = selectedRegion === region;
           return (
@@ -21,10 +31,10 @@ export default function RegionFilter({ selectedRegion, onSelectRegion }: RegionF
               key={region}
               onClick={() => onSelectRegion(region)}
               className={clsx(
-                'px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all duration-150 shrink-0 border',
+                'px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 shrink-0 border',
                 isSelected
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs scale-[1.02]'
-                  : 'bg-slate-100/90 text-slate-600 border-slate-200/80 hover:bg-slate-200/80 hover:text-slate-900'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs scale-105'
+                  : 'bg-slate-100/80 text-slate-600 border-slate-200/60 hover:bg-slate-200/60 hover:text-slate-900'
               )}
             >
               {region}

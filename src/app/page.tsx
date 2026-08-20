@@ -14,7 +14,6 @@ import { getFestivalStatus } from '@/lib/festivalUtils';
 import { Info } from 'lucide-react';
 
 const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
-  전체: { mapX: '127.8000', mapY: '36.3000' },
   '서울·수도권': { mapX: '126.9780', mapY: '37.5665' },
   강원: { mapX: '128.8760', mapY: '37.7519' },
   충청: { mapX: '127.3845', mapY: '36.3504' },
@@ -26,7 +25,7 @@ const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
 export default function Home() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [selectedRegion, setSelectedRegion] = useState<Region>('전체');
+  const [selectedRegion, setSelectedRegion] = useState<Region>('서울·수도권');
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('축제');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
@@ -39,7 +38,7 @@ export default function Home() {
     try {
       const coords = overrideCoords
         ? { mapX: overrideCoords.mapX.toString(), mapY: overrideCoords.mapY.toString() }
-        : REGION_COORDINATES[reg] || REGION_COORDINATES['전체'];
+        : REGION_COORDINATES[reg] || REGION_COORDINATES['서울·수도권'];
 
       const data = await fetchFestivals({
         category: cat,
@@ -72,10 +71,7 @@ export default function Home() {
 
   // 권역 -> 카테고리 -> 상태 순 필터링
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
-    let result =
-      selectedRegion === '전체'
-        ? festivals
-        : festivals.filter((f) => f.region === selectedRegion);
+    let result = festivals.filter((f) => f.region === selectedRegion || !f.region);
 
     result = result.filter((f) => f.categoryType === selectedCategory);
 

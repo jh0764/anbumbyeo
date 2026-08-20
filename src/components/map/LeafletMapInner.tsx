@@ -17,7 +17,6 @@ interface LeafletMapInnerProps {
 
 // 권역별 대표 중심 카메라 좌표
 const REGION_CAMERA: Record<Region, { lat: number; lng: number; zoom: number }> = {
-  전체: { lat: 36.3, lng: 127.8, zoom: 7 },
   '서울·수도권': { lat: 37.5665, lng: 126.9780, zoom: 10 },
   강원: { lat: 37.7519, lng: 128.8760, zoom: 10 },
   충청: { lat: 36.3504, lng: 127.3845, zoom: 10 },
@@ -255,8 +254,8 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  // 최초 초기 지도 위치 (한반도 전체 뷰)
-  const defaultCenter = useRef<[number, number]>([36.3, 127.8]).current;
+  // 기본 지도 초기 위치: 서울·수도권 중심
+  const defaultCenter = useRef<[number, number]>([37.5665, 126.9780]).current;
 
   // Focus Mode: 도보 700m 이내 주차장만 렌더링
   const displayParkingLots = useMemo(() => {
@@ -280,7 +279,7 @@ export default function LeafletMapInner({
     <div className="w-full h-full relative overflow-hidden">
       <MapContainer
         center={defaultCenter}
-        zoom={7}
+        zoom={10}
         preferCanvas={true}
         zoomControl={false}
         className="w-full h-full z-0"
