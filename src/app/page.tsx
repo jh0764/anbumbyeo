@@ -13,9 +13,8 @@ import { Festival, Region, CategoryType, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
 import { Info } from 'lucide-react';
 
-// 권역별 대표 중심 좌표 상수
 const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
-  전체: { mapX: '126.9780', mapY: '37.5665' },
+  전체: { mapX: '127.8000', mapY: '36.3000' },
   '서울·수도권': { mapX: '126.9780', mapY: '37.5665' },
   강원: { mapX: '128.8760', mapY: '37.7519' },
   충청: { mapX: '127.3845', mapY: '36.3504' },
@@ -44,9 +43,10 @@ export default function Home() {
 
       const data = await fetchFestivals({
         category: cat,
+        region: reg,
         mapX: parseFloat(coords.mapX),
         mapY: parseFloat(coords.mapY),
-        radius: 15000,
+        radius: 20000,
       });
 
       if (data && Array.isArray(data)) {
@@ -193,6 +193,7 @@ export default function Home() {
           <MainMap
             festivals={displayFestivals}
             selectedFestivalId={selectedFestivalId}
+            selectedRegion={selectedRegion}
             onSelectFestival={(id) => setSelectedFestivalId(id)}
             onSearchArea={handleSearchArea}
           />

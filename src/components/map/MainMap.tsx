@@ -1,11 +1,12 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Festival } from '@/types';
+import { Festival, Region } from '@/types';
 
 interface MainMapProps {
   festivals: Festival[];
   selectedFestivalId: string | null;
+  selectedRegion?: Region;
   onSelectFestival: (id: string | null) => void;
   onSearchArea?: (center: { lat: number; lng: number }) => void;
 }
@@ -24,6 +25,7 @@ const LeafletMapInner = dynamic(() => import('./LeafletMapInner'), {
 export default function MainMap({
   festivals,
   selectedFestivalId,
+  selectedRegion,
   onSelectFestival,
   onSearchArea,
 }: MainMapProps) {
@@ -32,6 +34,7 @@ export default function MainMap({
       <LeafletMapInner
         festivals={festivals}
         selectedFestivalId={selectedFestivalId}
+        selectedRegion={selectedRegion}
         onSelectFestival={onSelectFestival}
         onSearchArea={onSearchArea}
       />

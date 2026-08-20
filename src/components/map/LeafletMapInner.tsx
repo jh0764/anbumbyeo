@@ -4,17 +4,28 @@ import { useEffect, useRef, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Festival, Parking } from '@/types';
+import { Festival, Parking, Region } from '@/types';
 import { Plus, Minus, Search, RefreshCw } from 'lucide-react';
 
 interface LeafletMapInnerProps {
   festivals: Festival[];
   selectedFestivalId: string | null;
+  selectedRegion?: Region;
   onSelectFestival: (id: string | null) => void;
   onSearchArea?: (center: { lat: number; lng: number }) => void;
 }
 
-// 1. Leaflet Custom Icon 생성 함수
+// 권역별 대표 중심 카메라 좌표
+const REGION_CAMERA: Record<Region, { lat: number; lng: number; zoom: number }> = {
+  전체: { lat: 36.3, lng: 127.8, zoom: 7 },
+  '서울·수도권': { lat: 37.5665, lng: 126.9780, zoom: 10 },
+  강원: { lat: 37.7519, lng: 128.8760, zoom: 10 },
+  충청: { lat: 36.3504, lng: 127.3845, zoom: 10 },
+  전라: { lat: 35.1595, lng: 126.9056, zoom: 10 },
+  경상: { lat: 35.1796, lng: 129.0756, zoom: 10 },
+  제주: { lat: 33.4996, lng: 126.5312, zoom: 10 },
+};
+
 function createFestivalIcon(festival: Festival, isSelected: boolean) {
   const isFestival = festival.categoryType === '축제';
 
@@ -78,26 +89,29 @@ function createParkingIcon(parking: Parking) {
   });
 }
 
-// 2. Focus Mode FitBounds 카메라 컨트롤러 (선택된 축제가 명확할 때만 동적 이동, 없을 때는 100% 뷰포트 고정)
-function FocusCameraController({
+// 2. 지역 탭 선택 및 축제 포커스 카메라 조율 컨트롤러
+function CameraController({
   selectedFestival,
+  selectedRegion,
   parkingLots,
 }: {
   selectedFestival: Festival | null;
+  selectedRegion?: Region;
   parkingLots: Parking[];
 }) {
   const map = useMap();
-  const prevIdRef = useRef<string | null>(null);
+  const prevFestIdRef = useRef<string | null>(null);
+  const prevRegionRef = useRef<Region | undefined>(selectedRegion);
 
+  // 선택 축제 포커스 (Focus Mode)
   useEffect(() => {
-    // 선택된 축제가 없으면 카메라 이동 로직을 절대 수행하지 않고 뷰포트 고정!
     if (!selectedFestival) {
-      prevIdRef.current = null;
+      prevFestIdRef.current = null;
       return;
     }
 
-    if (prevIdRef.current !== selectedFestival.id) {
-      prevIdRef.current = selectedFestival.id;
+    if (prevFestIdRef.current !== selectedFestival.id) {
+      prevFestIdRef.current = selectedFestival.id;
 
       const points: [number, number][] = [[selectedFestival.lat, selectedFestival.lng]];
       for (const p of parkingLots) {
@@ -119,6 +133,17 @@ function FocusCameraController({
       }
     }
   }, [selectedFestival, parkingLots, map]);
+
+  // 권역 탭 선택 시 카메라 위치 연동
+  useEffect(() => {
+    if (selectedRegion && prevRegionRef.current !== selectedRegion && !selectedFestival) {
+      prevRegionRef.current = selectedRegion;
+      const cam = REGION_CAMERA[selectedRegion];
+      if (cam) {
+        map.flyTo([cam.lat, cam.lng], cam.zoom, { animate: true, duration: 1.0 });
+      }
+    }
+  }, [selectedRegion, selectedFestival, map]);
 
   return null;
 }
@@ -210,6 +235,7 @@ function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
 export default function LeafletMapInner({
   festivals,
   selectedFestivalId,
+  selectedRegion,
   onSelectFestival,
   onSearchArea,
 }: LeafletMapInnerProps) {
@@ -229,8 +255,8 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  // 최초 1회 렌더링용 초기 좌표 고정
-  const defaultCenter = useRef<[number, number]>([37.5665, 126.9780]).current;
+  // 최초 초기 지도 위치 (한반도 전체 뷰)
+  const defaultCenter = useRef<[number, number]>([36.3, 127.8]).current;
 
   // Focus Mode: 도보 700m 이내 주차장만 렌더링
   const displayParkingLots = useMemo(() => {
@@ -254,7 +280,7 @@ export default function LeafletMapInner({
     <div className="w-full h-full relative overflow-hidden">
       <MapContainer
         center={defaultCenter}
-        zoom={14}
+        zoom={7}
         preferCanvas={true}
         zoomControl={false}
         className="w-full h-full z-0"
@@ -266,8 +292,9 @@ export default function LeafletMapInner({
 
         <MapEventsController onSearchArea={onSearchArea} />
 
-        <FocusCameraController
+        <CameraController
           selectedFestival={selectedFestival}
+          selectedRegion={selectedRegion}
           parkingLots={displayParkingLots}
         />
 
