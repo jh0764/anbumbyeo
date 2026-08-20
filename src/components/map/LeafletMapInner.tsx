@@ -78,7 +78,7 @@ function createParkingIcon(parking: Parking) {
   });
 }
 
-// 2. Focus Mode FitBounds 카메라 컨트롤러
+// 2. Focus Mode FitBounds 카메라 컨트롤러 (사용자가 선택했을 때만 이동, 재검색 시 위치 고정)
 function FocusCameraController({
   selectedFestival,
   parkingLots,
@@ -90,6 +90,7 @@ function FocusCameraController({
   const prevIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // 선택된 축제가 없으면 카메라를 이동하지 않고 보고 있던 위치 그대로 유지!
     if (!selectedFestival) {
       prevIdRef.current = null;
       return;
@@ -122,7 +123,7 @@ function FocusCameraController({
   return null;
 }
 
-// 3. 지도 이동(moveend) 이벤트 수신 및 '이 지역에서 재검색' 버튼 컴포넌트
+// 3. 지도 이동(moveend) 이벤트 수신 및 '이 지역에서 재검색' 플로팅 버튼
 function MapEventsController({
   onSearchArea,
 }: {
@@ -172,7 +173,7 @@ function MapEventsController({
   );
 }
 
-// 4. 우측 상단 플로팅 컨트롤 (나침반, 줌인/아웃)
+// 4. 우측 상단 플로팅 컨트롤
 function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
   const map = useMap();
 
@@ -228,12 +229,8 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  const centerCoordinates = useMemo<[number, number]>(() => {
-    if (selectedFestival && !isNaN(selectedFestival.lat) && !isNaN(selectedFestival.lng)) {
-      return [selectedFestival.lat, selectedFestival.lng];
-    }
-    return [37.5665, 126.9780];
-  }, [selectedFestival]);
+  // 기본 지도 초기 중심 좌표 (시청 기준)
+  const initialCenter = useRef<[number, number]>([37.5665, 126.9780]).current;
 
   // Focus Mode: 도보 700m 이내 주차장만 렌더링
   const displayParkingLots = useMemo(() => {
@@ -256,7 +253,7 @@ export default function LeafletMapInner({
   return (
     <div className="w-full h-full relative overflow-hidden">
       <MapContainer
-        center={centerCoordinates}
+        center={initialCenter}
         zoom={14}
         preferCanvas={true}
         zoomControl={false}
