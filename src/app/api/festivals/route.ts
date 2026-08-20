@@ -42,6 +42,48 @@ function getCategoryTypeFromContentTypeId(contentTypeId?: string): Exclude<Categ
   return '공원·나들이';
 }
 
+// 한국관광공사 TourAPI 호출 헬퍼 (safeTourKey -> rawTourKey 1회 Fallback 재요청 로직)
+async function fetchKoreaTourApiItems(
+  safeKey: string,
+  rawKey: string,
+  typeId: string,
+  mapX: string,
+  mapY: string,
+  radius: string
+): Promise<any[]> {
+  const fetchSingleKey = async (key: string) => {
+    const url = `${KOREA_TOUR_API_URL}?serviceKey=${key}&numOfRows=20&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&arrange=E&contentTypeId=${typeId}`;
+    try {
+      const res = await fetch(url, { next: { revalidate: 60 } });
+      const rawText = await res.text();
+      try {
+        const json = JSON.parse(rawText);
+        const items =
+          json?.response?.body?.items?.item ||
+          json?.items?.item ||
+          json?.body?.items?.item;
+        return Array.isArray(items) ? items : items ? [items] : [];
+      } catch {
+        // XML 에러 응답이거나 JSON 파싱 실패 시 빈 배열 반환
+        return [];
+      }
+    } catch {
+      return [];
+    }
+  };
+
+  // 1차: safeKey로 시도
+  let items = await fetchSingleKey(safeKey);
+
+  // 2차: 0건인 경우 rawKey로 1회 재요청 (Fallback)
+  if (items.length === 0 && safeKey !== rawKey && rawKey) {
+    console.warn(`[TourAPI Retry] safeKey 호출 결과가 0건이어서 rawKey로 재시도합니다. (typeId: ${typeId})`);
+    items = await fetchSingleKey(rawKey);
+  }
+
+  return items;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -63,8 +105,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const decodedTourKey = decodeURIComponent(rawTourApiKey);
-    const encodedTourKey = encodeURIComponent(decodedTourKey);
+    // TourAPI 이중 인코딩 보정 키 생성
+    const safeTourKey = encodeURIComponent(decodeURIComponent(rawTourApiKey));
 
     // 1. API-1: 한국관광공사 위치기반 관광/축제 정보 (apis.data.go.kr)
     let targetTypes: string[] = ['15', '12', '14'];
@@ -76,34 +118,22 @@ export async function GET(request: NextRequest) {
       else if (categoryParam === '공원·나들이') targetTypes = ['12'];
     }
 
-    const tourFetchPromises = targetTypes.map(async (typeId) => {
-      const url = `${KOREA_TOUR_API_URL}?serviceKey=${encodedTourKey}&numOfRows=30&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&arrange=E&contentTypeId=${typeId}`;
-      try {
-        const res = await fetch(url, { next: { revalidate: 60 } });
-        if (!res.ok) return null;
-        return await res.json();
-      } catch {
-        return null;
-      }
-    });
+    const tourFetchPromises = targetTypes.map((typeId) =>
+      fetchKoreaTourApiItems(safeTourKey, rawTourApiKey, typeId, mapX, mapY, radius)
+    );
 
     const tourResults = await Promise.allSettled(tourFetchPromises);
     let rawList: any[] = [];
 
     for (const res of tourResults) {
       if (res.status === 'fulfilled' && res.value) {
-        const json = res.value;
-        const items =
-          json?.response?.body?.items?.item ||
-          json?.items?.item ||
-          json?.body?.items?.item;
-        const itemArr = Array.isArray(items) ? items : items ? [items] : [];
-        rawList.push(...itemArr);
+        rawList.push(...res.value);
       }
     }
 
+    // 실제 수집 데이터가 0건일 때 백업 리턴
     if (rawList.length === 0) {
-      console.warn('[API Notice] 한국관광공사 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
+      console.warn('[API Notice] 한국관광공사 API 수집 결과가 0건이어서 백업 데이터를 제공합니다.');
       return NextResponse.json({
         success: true,
         data: MOCK_FESTIVALS,
@@ -184,7 +214,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. 축제/명소별 반경 1km 주차장 매핑 및 혼잡도 계산
+    // 3. 실제 TourAPI 수집 데이터 매핑 (title, addr1, firstimage, mapx, mapy)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {

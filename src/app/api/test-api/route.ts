@@ -8,23 +8,23 @@ export async function GET(request: NextRequest) {
   const rawTourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
   const parkingApiKey = process.env.PARKING_API_KEY || '';
 
-  // serviceKey 인코딩/디코딩 호환 처리
-  const decodedTourKey = decodeURIComponent(rawTourApiKey);
-  const encodedTourKey = encodeURIComponent(decodedTourKey);
+  // TourAPI 인증키 이중 인코딩 보정
+  const safeTourKey = encodeURIComponent(decodeURIComponent(rawTourApiKey));
 
   const testResults: Record<string, any> = {
     env: {
       TOUR_API_KEY_EXISTS: Boolean(rawTourApiKey),
       PARKING_API_KEY_EXISTS: Boolean(parkingApiKey),
-      tourApiKeyLength: rawTourApiKey.length,
+      rawTourKeyLength: rawTourApiKey.length,
+      safeTourKeyLength: safeTourKey.length,
       parkingApiKeyLength: parkingApiKey.length,
     },
     apis: {},
   };
 
-  // 1. API-1: 한국관광공사 위치기반 관광/축제 정보 (apis.data.go.kr)
+  // 1. API-1: 한국관광공사 위치기반 관광/축제 정보 (apis.data.go.kr) - 1차: safeTourKey
   try {
-    const url1 = `${KOREA_TOUR_API_URL}?serviceKey=${encodedTourKey}&numOfRows=10&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=126.9780&mapY=37.5665&radius=20000&arrange=E`;
+    const url1 = `${KOREA_TOUR_API_URL}?serviceKey=${safeTourKey}&numOfRows=20&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=126.9780&mapY=37.5665&radius=20000&arrange=E`;
     const res1 = await fetch(url1, { cache: 'no-store' });
     const rawText1 = await res1.text();
     let json1 = null;
@@ -32,10 +32,29 @@ export async function GET(request: NextRequest) {
       json1 = JSON.parse(rawText1);
     } catch {}
 
+    let items =
+      json1?.response?.body?.items?.item ||
+      json1?.items?.item ||
+      json1?.body?.items?.item;
+
+    let retryUsed = false;
+
+    // 만약 1차 시도가 0건이거나 JSON 파싱 실패 시 원본 rawTourApiKey로 1회 재시도 (Fallback)
+    if ((!items || (Array.isArray(items) && items.length === 0)) && rawTourApiKey !== safeTourKey) {
+      retryUsed = true;
+      const fallbackUrl = `${KOREA_TOUR_API_URL}?serviceKey=${rawTourApiKey}&numOfRows=20&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=126.9780&mapY=37.5665&radius=20000&arrange=E`;
+      const fallbackRes = await fetch(fallbackUrl, { cache: 'no-store' });
+      const fallbackText = await fallbackRes.text();
+      try {
+        json1 = JSON.parse(fallbackText);
+        items = json1?.response?.body?.items?.item || json1?.items?.item || json1?.body?.items?.item;
+      } catch {}
+    }
+
     testResults.apis.koreaTourAPI = {
       status: res1.status,
-      statusText: res1.statusText,
-      authMethod: 'QueryString (serviceKey)',
+      retryUsed,
+      itemCount: Array.isArray(items) ? items.length : items ? 1 : 0,
       rawTextSample: rawText1.slice(0, 500),
       parsedJson: json1,
     };
@@ -43,7 +62,7 @@ export async function GET(request: NextRequest) {
     testResults.apis.koreaTourAPI = { error: err.message };
   }
 
-  // 2. API-2: 디지털융합플랫폼 통합 주차장 기본 정보 (api.koreaconnect.kr)
+  // 2. API-2: 통합 주차장 기본 정보 (api.koreaconnect.kr)
   try {
     const url2 = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000`;
     const res2 = await fetch(url2, {
@@ -61,8 +80,7 @@ export async function GET(request: NextRequest) {
 
     testResults.apis.parkingInfoAPI = {
       status: res2.status,
-      statusText: res2.statusText,
-      authMethod: 'Header (api_user_key_id)',
+      itemCount: Array.isArray(json2?.data) ? json2.data.length : 0,
       rawTextSample: rawText2.slice(0, 500),
       parsedJson: json2,
     };
@@ -70,7 +88,7 @@ export async function GET(request: NextRequest) {
     testResults.apis.parkingInfoAPI = { error: err.message };
   }
 
-  // 3. API-3: 디지털융합플랫폼 실시간 주차 현황 (api.koreaconnect.kr)
+  // 3. API-3: 실시간 주차 현황 (api.koreaconnect.kr)
   try {
     const url3 = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`;
     const res3 = await fetch(url3, {
@@ -88,20 +106,13 @@ export async function GET(request: NextRequest) {
 
     testResults.apis.parkingStatusAPI = {
       status: res3.status,
-      statusText: res3.statusText,
-      authMethod: 'Header (api_user_key_id)',
+      itemCount: Array.isArray(json3?.data) ? json3.data.length : 0,
       rawTextSample: rawText3.slice(0, 500),
       parsedJson: json3,
     };
   } catch (err: any) {
     testResults.apis.parkingStatusAPI = { error: err.message };
   }
-
-  console.log('[Test API Results Summary]:', {
-    koreaTourAPIStatus: testResults.apis.koreaTourAPI?.status,
-    parkingInfoStatus: testResults.apis.parkingInfoAPI?.status,
-    parkingStatusStatus: testResults.apis.parkingStatusAPI?.status,
-  });
 
   return NextResponse.json(testResults);
 }
