@@ -28,13 +28,14 @@ export default function Home() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedRegion, setSelectedRegion] = useState<Region>('전체');
-  const [selectedCategory, setSelectedCategory] = useState<CategoryType>('전체');
+  // 기본 선택(default) 카테고리: [🎉 축제]
+  const [selectedCategory, setSelectedCategory] = useState<CategoryType>('축제');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 백엔드 API 호출 및 실데이터 수집 함수 (권역별 mapX, mapY 좌표 반영)
+  // 백엔드 API 호출 및 실데이터 수집 함수
   const loadFestivals = useCallback(async (cat: CategoryType, reg: Region) => {
     setIsLoading(true);
     try {
@@ -63,18 +64,13 @@ export default function Home() {
 
   // 권역 -> 카테고리 -> 상태 순 필터링
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
-    // 1차: 권역 필터
     let result =
       selectedRegion === '전체'
         ? festivals
         : festivals.filter((f) => f.region === selectedRegion);
 
-    // 2차: 카테고리 필터
-    if (selectedCategory !== '전체') {
-      result = result.filter((f) => f.categoryType === selectedCategory);
-    }
+    result = result.filter((f) => f.categoryType === selectedCategory);
 
-    // 3차: 축제 카테고리인 경우 유효 상태 및 카운트
     const validFestivals = result.filter((f) => {
       if (f.categoryType !== '축제') return true;
       const st = getFestivalStatus(f);
@@ -89,7 +85,6 @@ export default function Home() {
       (f) => f.categoryType === '축제' && getFestivalStatus(f) === 'UPCOMING'
     ).length;
 
-    // 4차: 축제 카테고리일 때만 상태 필터 적용 (축제가 아닐 때는 전체 노출)
     const finalFiltered = validFestivals.filter((f) => {
       if (selectedCategory !== '축제') return true;
       return getFestivalStatus(f) === selectedStatus;
@@ -101,6 +96,11 @@ export default function Home() {
       filteredFestivals: finalFiltered,
     };
   }, [festivals, selectedRegion, selectedCategory, selectedStatus]);
+
+  // 지도 렉 방지를 위한 마커/카드 최대 15개 슬라이싱 최적화
+  const displayFestivals = useMemo(() => {
+    return filteredFestivals.slice(0, 15);
+  }, [filteredFestivals]);
 
   // 진행 중 축제가 0건이고 '축제' 카테고리일 때만 UPCOMING 자동 전환
   useEffect(() => {
@@ -118,15 +118,15 @@ export default function Home() {
 
   // 필터 변경 시 첫 항목 자동 선택
   useEffect(() => {
-    if (filteredFestivals.length > 0) {
-      const exists = filteredFestivals.some((f) => f.id === selectedFestivalId);
+    if (displayFestivals.length > 0) {
+      const exists = displayFestivals.some((f) => f.id === selectedFestivalId);
       if (!exists) {
-        setSelectedFestivalId(filteredFestivals[0].id);
+        setSelectedFestivalId(displayFestivals[0].id);
       }
     } else {
       setSelectedFestivalId(null);
     }
-  }, [filteredFestivals, selectedFestivalId]);
+  }, [displayFestivals, selectedFestivalId]);
 
   const selectedFestival = useMemo(() => {
     return festivals.find((f) => f.id === selectedFestivalId) || null;
@@ -191,17 +191,17 @@ export default function Home() {
           </div>
         ) : (
           <MainMap
-            festivals={filteredFestivals}
+            festivals={displayFestivals}
             selectedFestivalId={selectedFestivalId}
             onSelectFestival={setSelectedFestivalId}
           />
         )}
 
-        {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 (바텀시트가 접혀있을 때 노출) */}
+        {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 */}
         {!isLoading && bottomSheetMode === 'collapsed' && (
           <div className="absolute bottom-4 left-0 right-0 z-10">
             <FestivalCarousel
-              festivals={filteredFestivals}
+              festivals={displayFestivals}
               selectedFestivalId={selectedFestivalId}
               onSelectFestival={setSelectedFestivalId}
               onOpenDetail={() => setBottomSheetMode('half')}

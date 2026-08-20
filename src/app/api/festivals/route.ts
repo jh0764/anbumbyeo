@@ -39,7 +39,7 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Exclud
   return '서울·수도권';
 }
 
-function getCategoryTypeFromContentTypeId(contentTypeId?: string): Exclude<CategoryType, '전체'> {
+function getCategoryTypeFromContentTypeId(contentTypeId?: string): CategoryType {
   if (contentTypeId === '15') return '축제';
   if (contentTypeId === '14') return '문화시설';
   return '공원·나들이';
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 (Header 인증)
+    // 2. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인 (std_prl_cd 기준)
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 좌표가 유효한 주차장만 통합
+    // 좌표가 유효한 주차장 통합 및 실시간 연동 플래그 처리
     const combinedParkingLots: Parking[] = [];
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
@@ -175,13 +175,13 @@ export async function GET(request: NextRequest) {
 
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
+      const isRealtime = Boolean(status);
 
       const totalSpaces = parseInt(info.sum_park_cnt || status?.sum_park_cnt || '100', 10);
-      const curUseSpaces = parseInt(
-        status?.sum_curr_use_park_cnt || status?.cur_use_prk_cnt || '0',
-        10
-      );
-      const availableSpaces = Math.max(0, totalSpaces - curUseSpaces);
+      const curUseSpaces = status
+        ? parseInt(status?.sum_curr_use_park_cnt || status?.cur_use_prk_cnt || '0', 10)
+        : 0;
+      const availableSpaces = isRealtime ? Math.max(0, totalSpaces - curUseSpaces) : totalSpaces;
 
       combinedParkingLots.push({
         id: code,
@@ -193,10 +193,11 @@ export async function GET(request: NextRequest) {
         distance: '',
         distanceMeters: 0,
         address: info.prl_road_addr_nm || info.l_road_addr_nm || info.prl_jino_addr_nm || '',
+        isRealtime,
       });
     }
 
-    // 3. 축제 기준 주변 1.5km 이내 실제 주차장 매핑 (더미 Fallback 완전 제거)
+    // 3. 축제 기준 주변 1.5km 이내 실제 주차장 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -204,7 +205,6 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 실제 반경 1.5km (1,500m) 이내 주차장 매핑 및 최단거리 정렬
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -216,9 +216,8 @@ export async function GET(request: NextRequest) {
           })
           .filter((p) => p.distanceMeters <= 1500)
           .sort((a, b) => a.distanceMeters - b.distanceMeters)
-          .slice(0, 5); // 상위 5개
+          .slice(0, 5);
 
-        // 실제 잔여율 기반 혼잡도 계산 (더미 fallback 완전히 배제)
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(nearbyParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
 
@@ -249,7 +248,7 @@ export async function GET(request: NextRequest) {
           crowdMessage,
           category: categoryType,
           imageUrl: f.firstimage || f.firstimage2 || undefined,
-          parkingLots: nearbyParkingLots, // 타지역 더미 fallback 제거!
+          parkingLots: nearbyParkingLots,
         };
       });
 
