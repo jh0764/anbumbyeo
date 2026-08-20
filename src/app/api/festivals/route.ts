@@ -45,6 +45,58 @@ function getCategoryTypeFromContentTypeId(contentTypeId?: string): Exclude<Categ
   return '공원·나들이';
 }
 
+// Koreaconnect 위치기반 목록 API 호출 헬퍼
+async function callLocationBasedList(
+  key: string,
+  typeId: string,
+  mapX: string,
+  mapY: string,
+  radius: string
+): Promise<any[]> {
+  try {
+    const params = new URLSearchParams({
+      api_user_key_id: key,
+      MobileOS: 'ETC',
+      MobileApp: 'anbumbyeo',
+      _type: 'json',
+      listYN: 'Y',
+      arrange: 'A',
+      contentTypeId: typeId,
+      mapX,
+      mapY,
+      radius,
+      numOfRows: '30',
+    });
+
+    const url = `${FESTIVAL_API_URL}?${params.toString()}`;
+    const festRes = await fetch(url, { next: { revalidate: 60 } });
+
+    const rawText = await festRes.text();
+    console.log('[Koreaconnect Raw Response]:', rawText);
+
+    if (!festRes.ok) {
+      console.error(`[API Error] HTTP status: ${festRes.status}`);
+      return [];
+    }
+
+    try {
+      const json = JSON.parse(rawText);
+      const items =
+        json?.response?.body?.items?.item ||
+        json?.items?.item ||
+        json?.body?.items?.item ||
+        json?.data;
+      return Array.isArray(items) ? items : items ? [items] : [];
+    } catch (parseError) {
+      console.error('[API JSON Parse Error]:', parseError);
+      return [];
+    }
+  } catch (err) {
+    console.error('[API Fetch Exception]:', err);
+    return [];
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -54,13 +106,13 @@ export async function GET(request: NextRequest) {
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
-    // 환경 변수 감지 (TOUR_API_KEY 및 NEXT_PUBLIC_TOUR_API_KEY 모두 감지)
-    const apiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
+    // 환경 변수 읽기
+    const rawApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
 
-    console.log('[API Status]', apiKey ? 'API Key Detected' : 'No Key');
+    console.log('[API Status]', rawApiKey ? 'API Key Detected' : 'No Key');
 
-    // 1. API 키 미설정 시 백업 데이터 리턴
-    if (!apiKey) {
+    // API 키 미설정 시 백업 데이터 리턴
+    if (!rawApiKey) {
       console.warn('[API Notice] API 키 미설정으로 백업 데이터를 제공합니다.');
       console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
       return NextResponse.json({
@@ -69,8 +121,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. contentTypeId 12(관광지/공원), 14(문화시설), 15(축제) 동적 반영
-    let targetTypes: string[] = ['15', '12', '14'];
+    // 2. 인증키 Decoding / Encoding 변형 준비
+    const decodedKey = decodeURIComponent(rawApiKey);
+    const encodedKey = encodeURIComponent(decodedKey);
+    const candidateKeys = [rawApiKey, decodedKey, encodedKey].filter(
+      (v, i, a) => v && a.indexOf(v) === i
+    );
+
+    // 3. contentTypeId 12(관광지/공원), 14(문화시설), 15(축제) 동적 반영
+    let targetTypes: string[] = ['12', '15', '14'];
     if (requestedContentTypeId) {
       targetTypes = [requestedContentTypeId];
     } else if (categoryParam) {
@@ -79,41 +138,26 @@ export async function GET(request: NextRequest) {
       else if (categoryParam === '공원·나들이') targetTypes = ['12'];
     }
 
-    const apiFetchPromises = targetTypes.map((typeId) => {
-      const festivalParams = new URLSearchParams({
-        api_user_key_id: apiKey,
-        MobileOS: 'ETC',
-        MobileApp: 'anbumbyeo',
-        _type: 'json',
-        contentTypeId: typeId,
-        mapX,
-        mapY,
-        radius,
-        numOfRows: '30',
-        arrange: 'E',
-      });
-      return fetch(`${FESTIVAL_API_URL}?${festivalParams.toString()}`, {
-        next: { revalidate: 60 },
-      }).then((res) => (res.ok ? res.json() : null));
-    });
-
-    const apiResults = await Promise.allSettled(apiFetchPromises);
-
     let rawList: any[] = [];
-    for (const res of apiResults) {
-      if (res.status === 'fulfilled' && res.value) {
-        const json = res.value;
-        const items =
-          json?.response?.body?.items?.item ||
-          json?.items?.item ||
-          json?.body?.items?.item ||
-          json?.data;
-        const itemArr = Array.isArray(items) ? items : items ? [items] : [];
-        rawList.push(...itemArr);
+
+    // primary key 방식으로 1차 시도
+    const primaryKey = candidateKeys[0];
+    for (const typeId of targetTypes) {
+      const items = await callLocationBasedList(primaryKey, typeId, mapX, mapY, radius);
+      rawList.push(...items);
+    }
+
+    // 수집 결과가 0건이고 대체 candidate key가 존재하면 1회 Retry 진행
+    if (rawList.length === 0 && candidateKeys.length > 1) {
+      const retryKey = candidateKeys[1];
+      console.warn('[API Retry] 1차 키 호출 결과가 0건이어서 대체 인코딩 키로 재시도합니다.');
+      for (const typeId of targetTypes) {
+        const items = await callLocationBasedList(retryKey, typeId, mapX, mapY, radius);
+        rawList.push(...items);
       }
     }
 
-    // 수집 결과가 0건일 때 백업 리턴
+    // 수집 결과가 여전히 0건일 때 백업 데이터 리턴
     if (rawList.length === 0) {
       console.warn('[API Notice] 공공 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
       console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
@@ -123,15 +167,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. API-3 (주차장 기본정보) & API-2 (실시간 주차현황) 호출 및 조인
+    // 4. API-3 (주차장 기본정보) & API-2 (실시간 주차현황) 호출 및 조인
     const parkingInfoParams = new URLSearchParams({
-      api_user_key_id: apiKey,
+      api_user_key_id: primaryKey,
       page_no: '1',
       page_size: '1000',
     });
 
     const parkingStatusParams = new URLSearchParams({
-      api_user_key_id: apiKey,
+      api_user_key_id: primaryKey,
       page_no: '1',
       page_size: '1000',
     });
@@ -201,7 +245,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 4. 명소/축제별 반경 1km 주차장 조인 및 혼잡도 계산
+    // 5. 명소/축제별 반경 1km 주차장 조인 및 혼잡도 계산
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
