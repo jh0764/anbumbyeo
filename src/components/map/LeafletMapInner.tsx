@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// 축제 마커 아이콘 (외부 배경/테두리 투명)
+// 축제 마커 아이콘
 const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
   let bgColor = 'bg-emerald-500';
   let borderColor = 'border-emerald-700';
@@ -50,7 +50,7 @@ const createFestivalIcon = (crowdLevel: string, isSelected: boolean) => {
   });
 };
 
-// 주차장 마커 아이콘 (외부 배경/테두리 투명)
+// 주차장 마커 아이콘
 const createParkingIcon = (available: number) => {
   let bgColor = 'bg-emerald-600';
   let badgeText = `${available}면`;
@@ -77,17 +77,32 @@ const createParkingIcon = (available: number) => {
   });
 };
 
-// 지도 컨트롤러 및 '우측 상단 (top-24 right-4)' 플로팅 컨트롤 컴포넌트
-function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
+// 단방향 지형 flyTo 이동 및 플로팅 컨트롤러
+function MapController({ center }: { center: [number, number] }) {
   const map = useMap();
+  const prevCenterRef = useRef<[number, number] | null>(null);
 
   useEffect(() => {
-    map.flyTo(center, zoom, { duration: 1.2, animate: true });
-  }, [center, zoom, map]);
+    if (!center || !center[0] || !center[1]) return;
+
+    // 이전 중심 좌표와 비교하여 유의미한 이동일 때만 flyTo 단방향 명령 수행 (re-render flicker 방지)
+    const [lat, lng] = center;
+    if (
+      !prevCenterRef.current ||
+      prevCenterRef.current[0] !== lat ||
+      prevCenterRef.current[1] !== lng
+    ) {
+      map.flyTo([lat, lng], 14, {
+        animate: true,
+        duration: 0.8,
+      });
+      prevCenterRef.current = [lat, lng];
+    }
+  }, [center, map]);
 
   return (
     <div className="absolute top-24 right-4 z-10 flex flex-col gap-2">
-      {/* 줌 인/아웃 컨트롤 (top-24 right-4) */}
+      {/* 줌 인/아웃 컨트롤 */}
       <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-md border border-slate-200/80 p-1 flex flex-col items-center divide-y divide-slate-100">
         <button
           onClick={() => map.zoomIn()}
@@ -107,7 +122,7 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
 
       {/* 축제 위치 재정렬 버튼 */}
       <button
-        onClick={() => map.flyTo(center, zoom, { duration: 1 })}
+        onClick={() => map.flyTo(center, 14, { animate: true, duration: 0.8 })}
         className="p-2.5 bg-white/95 backdrop-blur-md text-emerald-700 hover:bg-emerald-50 rounded-2xl shadow-md border border-slate-200/80 transition-all active:scale-95 flex items-center justify-center"
         title="축제 위치로 이동"
       >
@@ -135,12 +150,13 @@ export default function LeafletMapInner({
     : [37.5283, 126.9328];
 
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full relative overflow-hidden">
       <MapContainer
         center={mapCenter}
         zoom={14}
         scrollWheelZoom={true}
-        className="w-full h-full z-0"
+        preferCanvas={true}
+        className="w-full h-full z-0 overflow-hidden"
         zoomControl={false}
       >
         <TileLayer
@@ -148,9 +164,9 @@ export default function LeafletMapInner({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {mapCenter && <MapController center={mapCenter} zoom={14} />}
+        <MapController center={mapCenter} />
 
-        {/* 축제 마커 (Popup 제거 처리) */}
+        {/* 축제 마커 */}
         {festivals.map((festival) => (
           <Marker
             key={festival.id}
@@ -162,7 +178,7 @@ export default function LeafletMapInner({
           />
         ))}
 
-        {/* 선택된 축제 주변 주차장 마커 (Popup 제거 처리) */}
+        {/* 선택된 축제 주변 주차장 마커 */}
         {selectedFestival?.parkingLots.map((parking: Parking) => (
           <Marker
             key={parking.id}

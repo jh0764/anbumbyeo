@@ -10,6 +10,7 @@ import FestivalBottomSheet, { BottomSheetMode } from '@/components/festival/Fest
 import { fetchFestivals } from '@/services/api';
 import { Festival, Region, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
+import { Info } from 'lucide-react';
 
 export default function Home() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
@@ -18,22 +19,14 @@ export default function Home() {
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
+  const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 지도 중심 좌표 (기본: 서울 중심)
-  const [mapCenter, setMapCenter] = useState<{ mapX: number; mapY: number }>({
-    mapX: 126.9780,
-    mapY: 37.5665,
-  });
-
-  // 백엔드 API 연동 데이터 수집
-  const loadFestivals = async (x?: number, y?: number) => {
+  // 백엔드 API 데이터 패칭
+  const loadFestivals = async () => {
     setIsLoading(true);
     try {
-      const data = await fetchFestivals({ mapX: x || mapCenter.mapX, mapY: y || mapCenter.mapY });
+      const data = await fetchFestivals();
       setFestivals(data);
-      if (data.length > 0) {
-        setSelectedFestivalId(data[0].id);
-      }
     } catch (err) {
       console.error('Failed to load festivals from API:', err);
     } finally {
@@ -71,6 +64,19 @@ export default function Home() {
     };
   }, [festivals, selectedRegion, selectedStatus]);
 
+  // 진행 중 축제가 0건일 때 개막 예정(UPCOMING)으로 자동 전환 로직
+  useEffect(() => {
+    if (!isLoading && festivals.length > 0) {
+      if (liveCount === 0 && upcomingCount > 0 && selectedStatus === 'LIVE') {
+        setSelectedStatus('UPCOMING');
+        setAutoSwitchedToUpcoming(true);
+      } else if (liveCount > 0 && autoSwitchedToUpcoming) {
+        setAutoSwitchedToUpcoming(false);
+      }
+    }
+  }, [isLoading, festivals, liveCount, upcomingCount, selectedStatus, autoSwitchedToUpcoming]);
+
+  // 필터링 목록이 변경되면 첫 번째 항목 선택 및 포커스
   useEffect(() => {
     if (filteredFestivals.length > 0) {
       const exists = filteredFestivals.some((f) => f.id === selectedFestivalId);
@@ -93,18 +99,40 @@ export default function Home() {
         <Header />
         <RegionFilter
           selectedRegion={selectedRegion}
-          onSelectRegion={setSelectedRegion}
+          onSelectRegion={(reg) => {
+            setSelectedRegion(reg);
+            setAutoSwitchedToUpcoming(false);
+          }}
         />
         <StatusFilter
           selectedStatus={selectedStatus}
-          onSelectStatus={setSelectedStatus}
+          onSelectStatus={(st) => {
+            setSelectedStatus(st);
+            setAutoSwitchedToUpcoming(false);
+          }}
           liveCount={liveCount}
           upcomingCount={upcomingCount}
         />
+
+        {/* 자동 전환 안내 토스트 배너 */}
+        {autoSwitchedToUpcoming && (
+          <div className="w-full bg-indigo-600 text-white px-3 py-1.5 text-xs font-bold flex items-center justify-between shadow-sm animate-fadeIn">
+            <div className="flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span>현재 진행 중인 축제가 없어 가장 가까운 예정 축제를 안내합니다.</span>
+            </div>
+            <button
+              onClick={() => setAutoSwitchedToUpcoming(false)}
+              className="text-[10px] underline opacity-80 hover:opacity-100 shrink-0 ml-1"
+            >
+              닫기
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 2. 지도 중심 메인 영역 */}
-      <div className="w-full flex-1 relative z-0">
+      <div className="w-full flex-1 relative z-0 overflow-hidden">
         {isLoading ? (
           <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-500 gap-2">
             <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
