@@ -15,6 +15,40 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function isPublicParkingDiv(info: any): boolean {
+  const divName = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '');
+  const rawName = String(info.prl_nm || info.prk_nm || '');
+
+  if (divName.includes('민영') || divName.includes('부설')) {
+    return false;
+  }
+  if (divName.includes('공영') || rawName.includes('공영') || rawName.includes('구청') || rawName.includes('시청') || rawName.includes('동사무소') || rawName.includes('주민센터')) {
+    return true;
+  }
+  return false;
+}
+
+function parseFeeInfoFromApi(info: any, isPublic: boolean): string {
+  const bscTime = info.bsc_park_tme || info.basic_time || info.gnr_basic_prk_time;
+  const bscAmt = info.bsc_park_amt || info.basic_charge || info.gnr_basic_prk_chr;
+  const numBscAmt = Number(bscAmt);
+
+  if (!isPublic) {
+    if (bscTime && bscAmt && !isNaN(numBscAmt) && numBscAmt > 0) {
+      return `${bscTime}분당 ${numBscAmt.toLocaleString()}원`;
+    }
+    return '민영 현장 요금제';
+  }
+
+  const isFree = info.pchrg_free_nm === '무료' || (bscAmt !== undefined && numBscAmt === 0);
+  if (isFree) return '무료';
+
+  if (bscTime && bscAmt && !isNaN(numBscAmt) && numBscAmt > 0) {
+    return `${bscTime}분당 ${numBscAmt.toLocaleString()}원`;
+  }
+  return '현장 요금제';
+}
+
 export async function GET() {
   const apiKey = process.env.PARKING_API_KEY || process.env.TOUR_API_KEY || '';
   const headers = {
@@ -22,67 +56,63 @@ export async function GET() {
     'Accept': 'application/json',
   };
 
-  // 광안리 드론 라이트쇼 좌표
   const targetLat = 35.1532;
   const targetLng = 129.1185;
 
   try {
-    // 1. 부산 수영구(26500) 및 부산광역시(26) 주차장 기본정보 호출
     const baseInfoUrlBusan = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=26500&addr_type=SIGUNGU`;
-    const baseInfoUrlSido = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=26&addr_type=SIDO`;
+    const liveInfoUrlBusan = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=26500&addr_type=SIGUNGU`;
 
-    const [sigunguRes, sidoRes, liveRes] = await Promise.all([
+    const [infoRes, liveRes] = await Promise.all([
       fetch(baseInfoUrlBusan, { headers, cache: 'no-store' }),
-      fetch(baseInfoUrlSido, { headers, cache: 'no-store' }),
-      fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, { headers, cache: 'no-store' }),
+      fetch(liveInfoUrlBusan, { headers, cache: 'no-store' }),
     ]);
 
-    const sigunguJson = await sigunguRes.json();
-    const sidoJson = await sidoRes.json();
+    const infoJson = await infoRes.json();
     const liveJson = await liveRes.json();
 
-    const sigunguList = sigunguJson?.data || sigunguJson?.response?.body?.items?.item || sigunguJson?.items || [];
-    const sidoList = sidoJson?.data || sidoJson?.response?.body?.items?.item || sidoJson?.items || [];
-    const liveList = liveJson?.data || liveJson?.response?.body?.items?.item || liveJson?.items || [];
+    const rawList = infoJson?.data || infoJson?.response?.body?.items?.item || infoJson?.items || [];
+    const baseItems = Array.isArray(rawList) ? rawList : [rawList];
 
-    const baseItems = [
-      ...(Array.isArray(sigunguList) ? sigunguList : [sigunguList]),
-      ...(Array.isArray(sidoList) ? sidoList : [sidoList]),
-    ];
+    const rawLiveList = liveJson?.data || liveJson?.response?.body?.items?.item || liveJson?.items || [];
+    const liveItems = Array.isArray(rawLiveList) ? rawLiveList : [rawLiveList];
 
-    // 실시간 Map 구축 (std_prl_cd 기준)
-    const liveItems = Array.isArray(liveList) ? liveList : [liveList];
     const liveMap = new Map();
     liveItems.forEach((item: any) => {
       const code = item.std_prl_cd || item.std_prk_mg_no || item.std_prk_cd;
       if (code) liveMap.set(code, item);
     });
 
-    // 2. 광안리 1km(1000m) 이내 필터링 & Join
     const nearby = baseItems
       .map((item: any) => {
         const lat = Number(item.la_val || item.lat);
         const lng = Number(item.lo_val || item.lng);
         if (!lat || !lng) return null;
+
+        const totalSpots = Number(item.sum_park_cnt || item.gnr_park_cnt || 0);
+        // 10면 이상 유효 주차장만 추출
+        if (totalSpots < 10) return null;
+
         const dist = getDistance(targetLat, targetLng, lat, lng);
-        if (dist > 1500) return null; // 1.5km 테스트 시도
+        if (dist > 1000) return null;
 
         const code = item.std_prl_cd || item.std_prk_mg_no;
         const live = liveMap.get(code);
+        const isPublic = isPublicParkingDiv(item);
         const currentParked = live ? Number(live.sum_curr_use_park_cnt || live.now_park_cnt || 0) : null;
-        const totalSpots = Number(item.sum_park_cnt || item.gnr_park_cnt || live?.sum_park_cnt || 0);
 
         return {
           std_prl_cd: code,
           prl_nm: item.prl_nm || item.prk_nm,
           addr: item.prl_road_addr_nm || item.prl_jino_addr_nm || item.l_road_addr_nm,
-          prl_div_nm: item.prl_div_nm || item.prl_kind_nm || '주차장',
+          isPublic,
+          prl_div_nm: isPublic ? '공영' : '민영',
           distanceMeters: Math.round(dist),
           walkMinutes: Math.ceil(dist / 67),
           totalSpots,
           currentParked,
           availableSpots: live ? Math.max(0, totalSpots - (currentParked || 0)) : null,
-          feeInfo: item.pchrg_free_nm === '무료' ? '무료' : `${item.bsc_park_tme || item.basic_time || 30}분당 ${item.bsc_park_amt || item.basic_charge || 0}원`,
+          feeInfo: parseFeeInfoFromApi(item, isPublic),
         };
       })
       .filter(Boolean)
@@ -91,10 +121,10 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       apiKeyConfigured: !!apiKey,
-      sigunguApiStatus: sigunguRes.status,
-      sigunguCount: Array.isArray(sigunguList) ? sigunguList.length : 0,
-      sidoApiStatus: sidoRes.status,
-      sidoCount: Array.isArray(sidoList) ? sidoList.length : 0,
+      infoApiStatus: infoRes.status,
+      infoCount: baseItems.length,
+      liveApiStatus: liveRes.status,
+      liveCount: liveItems.length,
       gwanganriNearbyCount: nearby.length,
       gwanganriParkingLots: nearby,
     });

@@ -14,55 +14,44 @@ const PARKING_STATUS_API_URL =
 
 // 주요 지역 시군구 법정동 코드 매핑
 function getSigunguCodeFromAddress(address: string, lat: number, lng: number): string {
-  if (!address) return '11110'; // 기본 서울 종로구
+  if (!address) return '11110';
 
-  // 부산
   if (address.includes('수영') || address.includes('광안')) return '26500';
   if (address.includes('해운대')) return '26350';
   if (address.includes('부산진') || address.includes('서면')) return '26230';
   if (address.includes('중구') && address.includes('부산')) return '26110';
   if (address.includes('부산')) return '26500';
 
-  // 대구
   if (address.includes('대구')) return '27110';
-  // 대전
   if (address.includes('대전')) return '30200';
-  // 서울
   if (address.includes('종로')) return '11110';
   if (address.includes('중구') && address.includes('서울')) return '11140';
   if (address.includes('마포')) return '11440';
   if (address.includes('강남')) return '11680';
   if (address.includes('서울')) return '11110';
 
-  // 경기/인천
   if (address.includes('수원')) return '41110';
   if (address.includes('구리')) return '41310';
   if (address.includes('인천')) return '28110';
 
-  // 강원
   if (address.includes('강릉')) return '42150';
   if (address.includes('춘천')) return '42110';
 
-  // 충청
   if (address.includes('서천')) return '44770';
   if (address.includes('보령')) return '44180';
   if (address.includes('청주')) return '43110';
 
-  // 전라
   if (address.includes('여수')) return '46130';
   if (address.includes('전주')) return '45111';
   if (address.includes('광주')) return '29110';
 
-  // 경상
   if (address.includes('경주')) return '47130';
   if (address.includes('울산')) return '31110';
 
-  // 제주
   if (address.includes('제주')) return '50110';
   if (address.includes('서귀포')) return '50130';
 
-  // 좌표 기준 Fallback
-  if (lng > 129.0 && lat < 35.3) return '26500'; // 부산 수영구
+  if (lng > 129.0 && lat < 35.3) return '26500';
   return '11110';
 }
 
@@ -142,25 +131,40 @@ function isPublicParkingDiv(info: any): boolean {
   return false;
 }
 
-function parseFeeInfoFromApi(info: any): string {
-  const isFree = info.pchrg_free_nm === '무료' || Number(info.bsc_park_amt) === 0 || info.pay_type_nm === '무료';
-  if (isFree) return '무료';
-
+// 요금 파싱 버그 수정 (민영 주차장 무료 오표기 방지)
+function parseFeeInfoFromApi(info: any, isPublic: boolean): string {
   const bscTime = info.bsc_park_tme || info.basic_time || info.gnr_basic_prk_time;
   const bscAmt = info.bsc_park_amt || info.basic_charge || info.gnr_basic_prk_chr;
 
   const addTime = info.add_unit_tme || info.add_time || info.gnr_add_prk_time;
   const addAmt = info.add_unit_amt || info.add_charge || info.gnr_add_prk_chr;
 
-  let feeStr = '';
-  if (bscTime && bscAmt) {
-    feeStr = `${bscTime}분당 ${Number(bscAmt).toLocaleString()}원`;
-    if (addTime && addAmt) {
+  const numBscAmt = Number(bscAmt);
+
+  // 1. 민영/부설 주차장의 경우: 요금 데이터가 0이거나 비어있어도 절대 '무료'로 오표기 금지 -> '민영 현장 요금제'
+  if (!isPublic) {
+    if (bscTime && bscAmt && !isNaN(numBscAmt) && numBscAmt > 0) {
+      let feeStr = `${bscTime}분당 ${numBscAmt.toLocaleString()}원`;
+      if (addTime && addAmt && Number(addAmt) > 0) {
+        feeStr += ` (추가 ${addTime}분당 ${Number(addAmt).toLocaleString()}원)`;
+      }
+      return feeStr;
+    }
+    return '민영 현장 요금제';
+  }
+
+  // 2. 공영 주차장의 경우: 명확한 무료 표시 또는 0원일 때만 '무료' 표기
+  const isFree = info.pchrg_free_nm === '무료' || (bscAmt !== undefined && numBscAmt === 0) || info.pay_type_nm === '무료';
+  if (isFree) return '무료';
+
+  if (bscTime && bscAmt && !isNaN(numBscAmt) && numBscAmt > 0) {
+    let feeStr = `${bscTime}분당 ${numBscAmt.toLocaleString()}원`;
+    if (addTime && addAmt && Number(addAmt) > 0) {
       feeStr += ` (추가 ${addTime}분당 ${Number(addAmt).toLocaleString()}원)`;
     }
     return feeStr;
   }
-  if (addTime && addAmt) {
+  if (addTime && addAmt && Number(addAmt) > 0) {
     return `${addTime}분당 ${Number(addAmt).toLocaleString()}원`;
   }
 
@@ -193,7 +197,6 @@ export async function GET(request: NextRequest) {
     const todayStr = '20260821';
     const todayNum = 20260821;
 
-    // 1. 축제(category === '축제')인 경우: searchFestival2 호출
     if (isFestival) {
       const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=${todayStr}&numOfRows=100&arrange=A`;
       try {
@@ -221,7 +224,6 @@ export async function GET(request: NextRequest) {
         console.error('[API Error] searchFestival2 호출 예외:', err);
       }
     } else {
-      // 2. 공원/문화시설: locationBasedList2 호출
       const rawRadius = Number(searchParams.get('radius')) || 20000;
       const radius = Math.min(Math.max(1000, rawRadius), 20000);
       const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
@@ -252,12 +254,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 지역별 시군구 코드(addr_cd) 조율하여 통합 주차장 API 다중 병렬 수집
+    // 3. 시군구 코드(addr_cd) 조율하여 통합 주차장 기본정보 및 실시간 API 병렬 다중 수집
     const targetCenterLat = parseFloat(mapY);
     const targetCenterLng = parseFloat(mapX);
     const primarySigunguCode = getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng);
 
-    // 주요 시군구 코드들 (종로구 11110, 수영구 26500, 해운대구 26350, 대구중구 27110, 대전유성구 30200 등)
     const sigunguCodesToQuery = Array.from(
       new Set([primarySigunguCode, '26500', '26350', '11110', '11140', '42150', '44770'])
     );
@@ -266,60 +267,60 @@ export async function GET(request: NextRequest) {
     const parkingStatusMap = new Map<string, any>();
 
     const fetchParkingPromises = sigunguCodesToQuery.map(async (code) => {
-      const url = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+      const statusUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+
       try {
-        const res = await fetch(url, {
-          cache: 'no-store',
-          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-        });
-        if (!res.ok) return [];
-        const json = await res.json();
-        const raw = json?.data || json?.response?.body?.items?.item || json?.items;
-        return Array.isArray(raw) ? raw : raw ? [raw] : [];
+        const [iRes, sRes] = await Promise.all([
+          fetch(infoUrl, { cache: 'no-store', headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' } }),
+          fetch(statusUrl, { cache: 'no-store', headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' } }),
+        ]);
+
+        let iItems: any[] = [];
+        if (iRes.ok) {
+          const iJson = await iRes.json();
+          const raw = iJson?.data || iJson?.response?.body?.items?.item || iJson?.items;
+          iItems = Array.isArray(raw) ? raw : raw ? [raw] : [];
+        }
+
+        let sItems: any[] = [];
+        if (sRes.ok) {
+          const sJson = await sRes.json();
+          const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
+          sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+        }
+
+        return { iItems, sItems };
       } catch {
-        return [];
+        return { iItems: [], sItems: [] };
       }
     });
 
-    const [infoResults, statusRes] = await Promise.allSettled([
-      Promise.all(fetchParkingPromises),
-      fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, {
-        cache: 'no-store',
-        headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-      }),
-    ]);
+    const infoResults = await Promise.allSettled(fetchParkingPromises);
 
-    if (infoResults.status === 'fulfilled') {
-      const seenCodes = new Set<string>();
-      for (const list of infoResults.value) {
-        for (const item of list) {
+    const seenCodes = new Set<string>();
+    for (const resObj of infoResults) {
+      if (resObj.status === 'fulfilled' && resObj.value) {
+        const { iItems, sItems } = resObj.value;
+
+        for (const item of iItems) {
           const code = item.std_prl_cd || item.std_prk_mg_no;
           if (code && !seenCodes.has(code)) {
             seenCodes.add(code);
             parkingInfoList.push(item);
           }
         }
-      }
-    }
 
-    if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
-      try {
-        const statusJson = await statusRes.value.json();
-        const rawStatus = statusJson?.data || statusJson?.items || statusJson?.response?.body?.items?.item;
-        const statusList = Array.isArray(rawStatus) ? rawStatus : rawStatus ? [rawStatus] : [];
-
-        for (const st of statusList) {
+        for (const st of sItems) {
           const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
           if (code) {
             parkingStatusMap.set(code, st);
           }
         }
-      } catch (e) {
-        console.error('[API Error] Parking Status JSON 파싱 예외:', e);
       }
     }
 
-    // 4. API 원본 응답 기반 주차장 데이터 1:1 파싱
+    // 4. 최소 주차면수(10면 이상) 필터링 & 요금 표기 적용
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -329,6 +330,9 @@ export async function GET(request: NextRequest) {
 
       const isPublic = isPublicParkingDiv(info);
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+
+      // [핵심 필터링]: 1~9면 규모 초소형 부설/건물 주차장 100% 완전 제외
+      if (totalSpaces < 10) continue;
 
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
@@ -346,7 +350,7 @@ export async function GET(request: NextRequest) {
         availableSpaces = Math.floor(totalSpaces * 0.65);
       }
 
-      const feeInfo = parseFeeInfoFromApi(info);
+      const feeInfo = parseFeeInfoFromApi(info, isPublic);
 
       combinedParkingLots.push({
         id: code,
@@ -364,7 +368,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 각 축제 좌표 기준 1km(1000m) 엄격 필터링 및 공영 3개 + 민영 2개(최대 5개) 할당
+    // 5. 각 축제 좌표 기준 1km 이내 10면 이상 유효 주차장 중 [공영] 최대 3개 + [민영] 최대 2개 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -396,7 +400,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 1km(1000m) 이내 실제 주차장만 엄격 필터링
+        // 1km(1000m) 이내 10면 이상 유효 주차장만 엄격 추출
         const allNearby = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -466,7 +470,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[시군구 addr_cd 동적 수집 완료 건수]', sortedFestivals.length);
+    console.log('[10면 이상 주차장 매핑 완료 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
