@@ -96,7 +96,7 @@ function isStrictPublicParking(info: any): boolean {
   return false;
 }
 
-// 주차 요금 파싱 개선 (무료 및 실제 요금 정확 표기)
+// 실제 수신 요금 데이터 파싱
 function parseFeeInfo(info: any): string {
   const payType = String(info.pay_type_nm || info.chr_se_cd || info.payYn || '');
   if (payType === 'N' || payType.includes('무료')) return '무료';
@@ -118,66 +118,6 @@ function parseFeeInfo(info: any): string {
   }
   return '현장 요금제';
 }
-
-// 부산 지역 축제용 대표 공영/민영 주차장 템플릿
-const BUSAN_DEFAULT_PARKINGS: Parking[] = [
-  {
-    id: 'busan-prk-1',
-    name: '민락매립지 공영주차장',
-    lat: 35.1554,
-    lng: 129.1232,
-    totalSpaces: 140,
-    availableSpaces: 48,
-    distance: '도보 4분 (280m)',
-    distanceMeters: 280,
-    address: '부산광역시 수영구 민락수변로 17',
-    isRealtime: true,
-    isPublic: true,
-    feeInfo: '30분당 900원',
-  },
-  {
-    id: 'busan-prk-2',
-    name: '광안리해수욕장 공영주차장',
-    lat: 35.1528,
-    lng: 129.1179,
-    totalSpaces: 95,
-    availableSpaces: 22,
-    distance: '도보 6분 (410m)',
-    distanceMeters: 410,
-    address: '부산광역시 수영구 남천바다로 33',
-    isRealtime: true,
-    isPublic: true,
-    feeInfo: '10분당 300원',
-  },
-  {
-    id: 'busan-prk-3',
-    name: '광안타워 민영주차장',
-    lat: 35.1541,
-    lng: 129.1195,
-    totalSpaces: 50,
-    availableSpaces: 15,
-    distance: '도보 3분 (200m)',
-    distanceMeters: 200,
-    address: '부산광역시 수영구 광안해변로 225',
-    isRealtime: false,
-    isPublic: false,
-    feeInfo: '30분당 1,500원',
-  },
-  {
-    id: 'busan-prk-4',
-    name: '해운대광장 공영주차장',
-    lat: 35.1592,
-    lng: 129.1621,
-    totalSpaces: 110,
-    availableSpaces: 35,
-    distance: '도보 5분 (340m)',
-    distanceMeters: 340,
-    address: '부산광역시 해운대구 구남로 42',
-    isRealtime: true,
-    isPublic: true,
-    feeInfo: '10분당 500원',
-  },
-];
 
 export async function GET(request: NextRequest) {
   try {
@@ -264,7 +204,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. API-2 & API-3: 주차장 정보 & 실시간 현황 조인
+    // 3. API-2 & API-3: 실제 실시간 주차장 정보 & 현황 조회
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -306,7 +246,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 주차장 객체 수집
+    // 4. 순수 실제 응답 기반 주차장 데이터 매핑
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -352,7 +292,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 2단계 파이프라인 + 부산 지역 주차장 보충
+    // 5. 엄격한 1km(1000m) 거리 필터 적용 (하드코딩 완전 100% 제거)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -385,7 +325,7 @@ export async function GET(request: NextRequest) {
         const festAddress = f.addr1 || '';
         const region = getRegionFromAddress(festAddress, festLat, festLng);
 
-        // 1km 내 주차장 거리 계산
+        // 엄격 1km (1000m) 이내 실제 주차장만 수집
         const allNearby = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -395,10 +335,10 @@ export async function GET(request: NextRequest) {
               distance: formatWalkingDistanceText(distM),
             };
           })
-          .filter((p) => p.distanceMeters <= 1200)
+          .filter((p) => p.distanceMeters <= 1000) // 엄격한 1km (1000m)제한 적용
           .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-        let publicParkings = allNearby.filter((p) => p.isPublic).slice(0, 5);
+        const publicParkings = allNearby.filter((p) => p.isPublic).slice(0, 5);
         let finalParkingLots: Parking[] = [...publicParkings];
 
         if (publicParkings.length < 3) {
@@ -406,25 +346,6 @@ export async function GET(request: NextRequest) {
             .filter((p) => !p.isPublic)
             .slice(0, 2);
           finalParkingLots = [...publicParkings, ...privateParkings];
-        }
-
-        // 부산 지역 축제인 경우 주차장이 3개 미만이면 부산 대표 주차장 자동 매핑 보충
-        if (region === '부산' && finalParkingLots.length < 3) {
-          const busanMapped = BUSAN_DEFAULT_PARKINGS.map((p) => {
-            const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
-            return {
-              ...p,
-              distanceMeters: distM,
-              distance: formatWalkingDistanceText(distM),
-            };
-          }).sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-          const existingIds = new Set(finalParkingLots.map((p) => p.id));
-          for (const bp of busanMapped) {
-            if (!existingIds.has(bp.id) && finalParkingLots.length < 5) {
-              finalParkingLots.push(bp);
-            }
-          }
         }
 
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
