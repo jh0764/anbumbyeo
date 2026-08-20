@@ -13,7 +13,7 @@ import { Festival, Region, CategoryType, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
 import { Info } from 'lucide-react';
 
-// 권역별 대표 좌표 상수
+// 권역별 대표 중심 좌표 상수
 const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
   전체: { mapX: '126.9780', mapY: '37.5665' },
   '서울·수도권': { mapX: '126.9780', mapY: '37.5665' },
@@ -34,7 +34,7 @@ export default function Home() {
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 백엔드 API 호출 및 실데이터 수집 함수
+  // 백엔드 API 호출 및 실데이터 수집 함수 (권역별 mapX, mapY 좌표 전달)
   const loadFestivals = useCallback(async (cat: CategoryType, reg: Region) => {
     setIsLoading(true);
     try {
@@ -96,7 +96,7 @@ export default function Home() {
     };
   }, [festivals, selectedRegion, selectedCategory, selectedStatus]);
 
-  // 지도 렉 방지를 위한 마커/카드 최대 15개 슬라이싱 최적화
+  // 지도 마커 슬라이싱 (최대 15개)
   const displayFestivals = useMemo(() => {
     return filteredFestivals.slice(0, 15);
   }, [filteredFestivals]);
@@ -188,7 +188,7 @@ export default function Home() {
           />
         )}
 
-        {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 (바텀시트가 접혀있거나 선택되지 않았을 때) */}
+        {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 */}
         {!isLoading && bottomSheetMode === 'collapsed' && (
           <div className="absolute bottom-4 left-0 right-0 z-10">
             <FestivalCarousel
