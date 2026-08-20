@@ -3,8 +3,6 @@ import { Festival, Parking, Region, CategoryType } from '@/types';
 import { calculateDistance, calculateCrowdScore } from '@/lib/geoUtils';
 import { MOCK_FESTIVALS } from '@/services/mockData';
 
-const API_USER_KEY = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
-
 // Koreaconnect 공공 API 엔드포인트
 const FESTIVAL_API_URL =
   'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
@@ -56,12 +54,15 @@ export async function GET(request: NextRequest) {
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
-    console.log('[Backend API Init] TOUR_API_KEY 감지 상태:', API_USER_KEY ? 'Key Loaded' : 'No Key');
+    // 환경 변수 감지 (TOUR_API_KEY 및 NEXT_PUBLIC_TOUR_API_KEY 모두 감지)
+    const apiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
+
+    console.log('[API Status]', apiKey ? 'API Key Detected' : 'No Key');
 
     // 1. API 키 미설정 시 백업 데이터 리턴
-    if (!API_USER_KEY) {
-      console.warn('[API Notice] TOUR_API_KEY 미설정으로 백업 데이터를 제공합니다.');
-      console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
+    if (!apiKey) {
+      console.warn('[API Notice] API 키 미설정으로 백업 데이터를 제공합니다.');
+      console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
       return NextResponse.json({
         success: true,
         data: MOCK_FESTIVALS,
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
 
     const apiFetchPromises = targetTypes.map((typeId) => {
       const festivalParams = new URLSearchParams({
-        api_user_key_id: API_USER_KEY,
+        api_user_key_id: apiKey,
         MobileOS: 'ETC',
         MobileApp: 'anbumbyeo',
         _type: 'json',
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
     // 수집 결과가 0건일 때 백업 리턴
     if (rawList.length === 0) {
       console.warn('[API Notice] 공공 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
-      console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
+      console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
       return NextResponse.json({
         success: true,
         data: MOCK_FESTIVALS,
@@ -124,13 +125,13 @@ export async function GET(request: NextRequest) {
 
     // 3. API-3 (주차장 기본정보) & API-2 (실시간 주차현황) 호출 및 조인
     const parkingInfoParams = new URLSearchParams({
-      api_user_key_id: API_USER_KEY,
+      api_user_key_id: apiKey,
       page_no: '1',
       page_size: '1000',
     });
 
     const parkingStatusParams = new URLSearchParams({
-      api_user_key_id: API_USER_KEY,
+      api_user_key_id: apiKey,
       page_no: '1',
       page_size: '1000',
     });
@@ -268,7 +269,7 @@ export async function GET(request: NextRequest) {
 
     const finalData = resultFestivals.length > 0 ? resultFestivals : MOCK_FESTIVALS;
 
-    console.log('실제 API 수집 건수:', finalData.length);
+    console.log('[실제 수집 건수]', finalData.length);
 
     return NextResponse.json({
       success: true,
@@ -276,7 +277,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[API Exception] /api/festivals 예외:', error);
-    console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
+    console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
     return NextResponse.json({
       success: true,
       data: MOCK_FESTIVALS,
