@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
 
     const contentTypeId = requestedContentTypeId || getContentTypeIdFromCategory(categoryParam);
 
-    // 1. locationBasedList2 수집
+    // 1. locationBasedList2 축제/명소 목록 1차 수집
     let rawList: any[] = [];
     const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
 
@@ -136,12 +136,12 @@ export async function GET(request: NextRequest) {
       console.error('[API Error] locationBasedList2 호출 예외:', err);
     }
 
-    // 2. 축제(contentTypeId === '15') 데이터의 detailIntro2 상세 날짜 병열 결합 (상위 20개)
+    // 2. detailIntro2 API를 통해 각 축제의 실제 시작일(eventstartdate) 및 종료일(eventenddate) 병열 연동
     const detailDatesMap = new Map<string, { start: string; end: string }>();
 
     if (contentTypeId === '15' && rawList.length > 0) {
-      const festivalItems = rawList.slice(0, 20);
-      const detailPromises = festivalItems.map(async (item: any) => {
+      const targetItems = rawList.slice(0, 30);
+      const detailPromises = targetItems.map(async (item: any) => {
         const contentId = item.contentid || item.contentId;
         if (!contentId) return null;
 
@@ -166,9 +166,7 @@ export async function GET(request: NextRequest) {
           if (detailItem) {
             const start = String(detailItem.eventstartdate || detailItem.event_start_date || '');
             const end = String(detailItem.eventenddate || detailItem.event_end_date || '');
-            if (start || end) {
-              return { contentId, start, end };
-            }
+            return { contentId, start, end };
           }
           return null;
         } catch {
@@ -277,7 +275,7 @@ export async function GET(request: NextRequest) {
     const day = String(now.getDate()).padStart(2, '0');
     const todayNum = Number(`${year}${month}${day}`) || 20260821;
 
-    // 5. 날짜 매핑 및 과거 종료 축제 배제
+    // 5. 엄격한 날짜 필터링 및 과거 축제 100% 필터링 배제
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -293,7 +291,7 @@ export async function GET(request: NextRequest) {
         const startNum = Number(rawStart);
         const endNum = Number(rawEnd);
 
-        // [종료된 축제 배제]: 종료일이 8자리 이상이고 오늘보다 명백히 이전인 과거 축제는 100% 필터링 삭제
+        // [과거 종료 축제 100% 배제]: 종료일이 오늘보다 명백히 이전인 행사는 무조건 필터링 제외!
         if (!isNaN(endNum) && rawEnd.length >= 8 && endNum < todayNum) {
           return false;
         }
@@ -305,6 +303,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
+        // 1km 이내 순수 공영주차장 최단거리순 상위 5개 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -340,6 +339,7 @@ export async function GET(request: NextRequest) {
           endDate = `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`;
         }
 
+        // '상시 진행' 문구 완전 삭제 -> YYYY.MM.DD ~ YYYY.MM.DD 규격화
         const period = categoryType === '축제'
           ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}`
           : '연중무휴';
@@ -367,7 +367,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    console.log('[detailIntro2 결합 수집 건수]', resultFestivals.length);
+    console.log('[detailIntro2 수집 완수 건수]', resultFestivals.length);
 
     return NextResponse.json({
       success: true,

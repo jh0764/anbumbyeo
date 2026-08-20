@@ -78,7 +78,7 @@ function createParkingIcon(parking: Parking) {
   });
 }
 
-// 2. Focus Mode FitBounds 카메라 컨트롤러 (선택된 축제가 있을 때만 동적 이동, 없을 때는 100% 뷰포트 고정)
+// 2. Focus Mode FitBounds 카메라 컨트롤러 (선택된 축제가 명확할 때만 동적 이동, 없을 때는 100% 뷰포트 고정)
 function FocusCameraController({
   selectedFestival,
   parkingLots,
@@ -90,6 +90,7 @@ function FocusCameraController({
   const prevIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // 선택된 축제가 없으면 카메라 이동 로직을 절대 수행하지 않고 뷰포트 고정!
     if (!selectedFestival) {
       prevIdRef.current = null;
       return;
