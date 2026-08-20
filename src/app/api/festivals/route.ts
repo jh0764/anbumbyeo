@@ -106,10 +106,14 @@ export async function GET(request: NextRequest) {
     }
 
     const contentTypeId = requestedContentTypeId || getContentTypeIdFromCategory(categoryParam);
+    const isFestival = contentTypeId === '15';
 
-    // 1. locationBasedList2 축제/명소 목록 1차 수집
+    // 1. 축제의 경우 arrange=C(최신 수정일순), numOfRows=100 수집
+    const arrange = isFestival ? 'C' : 'E';
+    const numOfRows = isFestival ? 100 : 50;
+
     let rawList: any[] = [];
-    const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
+    const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=${numOfRows}&arrange=${arrange}`;
 
     try {
       const res = await fetch(locationUrl, {
@@ -136,11 +140,11 @@ export async function GET(request: NextRequest) {
       console.error('[API Error] locationBasedList2 호출 예외:', err);
     }
 
-    // 2. detailIntro2 API를 통해 각 축제의 실제 시작일(eventstartdate) 및 종료일(eventenddate) 병렬 수집
+    // 2. 축제(contentTypeId === '15')인 경우 detailIntro2를 병렬(상위 50개) 호출하여 행사일 수집
     const detailDatesMap = new Map<string, { start: string; end: string }>();
 
-    if (contentTypeId === '15' && rawList.length > 0) {
-      const targetItems = rawList.slice(0, 30);
+    if (isFestival && rawList.length > 0) {
+      const targetItems = rawList.slice(0, 50);
       const detailPromises = targetItems.map(async (item: any) => {
         const contentId = item.contentid || item.contentId;
         if (!contentId) return null;
@@ -182,7 +186,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 주차장 정보 & 실시간 현황 조인
+    // 3. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -275,7 +279,7 @@ export async function GET(request: NextRequest) {
     const day = String(now.getDate()).padStart(2, '0');
     const todayNum = Number(`${year}${month}${day}`) || 20260821;
 
-    // 5. 실제 날짜 검증 및 엄격 필터링 (가짜 하드코딩 날짜 100% 배제)
+    // 5. 엄격한 2026년 날짜 검증 및 2025년 과거 축제 배제
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -288,7 +292,6 @@ export async function GET(request: NextRequest) {
         const rawStart = detailDate?.start || String(f.eventstartdate || f.event_start_date || '');
         const rawEnd = detailDate?.end || String(f.eventenddate || f.event_end_date || '');
 
-        // rawStart 또는 rawEnd가 없거나 8자리 미만이면 무조건 제외 (drop)
         if (!rawStart || !rawEnd || rawStart.length < 8 || rawEnd.length < 8) {
           return false;
         }
@@ -300,7 +303,7 @@ export async function GET(request: NextRequest) {
           return false;
         }
 
-        // [과거 종료 축제 배제]: endNum < todayNum 인 축제는 무조건 100% 제외
+        // [종료된 과거 축제 배제]: endNum < 20260821 축제는 무조건 제외
         if (endNum < todayNum) {
           return false;
         }
@@ -312,7 +315,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 1km 이내 순수 공영주차장 최단거리순 상위 5개 매핑
+        // 1km 이내 순수 공영주차장 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -338,7 +341,6 @@ export async function GET(request: NextRequest) {
         const rawStart = detailDate?.start || String(f.eventstartdate || f.event_start_date || '');
         const rawEnd = detailDate?.end || String(f.eventenddate || f.event_end_date || '');
 
-        // 공공데이터 원본 8자리 기반 날짜 변환
         const startDate = `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`;
         const endDate = `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`;
 
@@ -369,7 +371,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    console.log('[detailIntro2 원본 수집 완수 건수]', resultFestivals.length);
+    console.log('[arrange=C 수집 완료 건수]', resultFestivals.length);
 
     return NextResponse.json({
       success: true,
