@@ -54,8 +54,9 @@ export async function GET(request: NextRequest) {
     const mapY = searchParams.get('mapY') || '37.5665';
     const radius = searchParams.get('radius') || '20000';
     const requestedContentTypeId = searchParams.get('contentTypeId');
+    const categoryParam = searchParams.get('category');
 
-    // 1. API 키 미설정 시 상시 나들이/문화시설 포함 시연용 데이터 리턴
+    // 1. API 키 미설정 시 백업 데이터 리턴
     if (!API_USER_KEY) {
       console.warn('[API Notice] TOUR_API_KEY 미설정으로 상시 나들이/명소 백업 데이터를 반환합니다.');
       return NextResponse.json({
@@ -66,10 +67,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. contentTypeId 12(관광지/나들이), 14(문화시설), 15(축제) 3개 카테고리 병렬 호출
-    const targetTypes = requestedContentTypeId
-      ? [requestedContentTypeId]
-      : ['15', '12', '14'];
+    // 2. 카테고리/contentTypeId 파라미터 해석
+    let targetTypes: string[] = ['15', '12', '14'];
+    if (requestedContentTypeId) {
+      targetTypes = [requestedContentTypeId];
+    } else if (categoryParam) {
+      if (categoryParam === '축제') targetTypes = ['15'];
+      else if (categoryParam === '문화시설') targetTypes = ['14'];
+      else if (categoryParam === '공원·나들이') targetTypes = ['12'];
+    }
 
     const apiFetchPromises = targetTypes.map((typeId) => {
       const festivalParams = new URLSearchParams({
@@ -244,7 +250,7 @@ export async function GET(request: NextRequest) {
           title: f.title,
           startDate,
           endDate,
-          period: categoryType === '축제' ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}` : '상시 운영 (365일)',
+          period: categoryType === '축제' ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}` : '연중무휴',
           locationName: f.addr1 || '명소 행사장',
           address: f.addr1 || '',
           region,

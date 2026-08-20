@@ -48,14 +48,14 @@ export default function Home() {
         ? festivals
         : festivals.filter((f) => f.region === selectedRegion);
 
-    // 2차: 카테고리 필터 (축제 / 공원·나들이 / 문화시설)
+    // 2차: 카테고리 필터
     if (selectedCategory !== '전체') {
       result = result.filter((f) => f.categoryType === selectedCategory);
     }
 
-    // 3차: 유효 명소 및 상태 카운트 (상시 명소는 LIVE에 자동 포함)
+    // 3차: 축제 카테고리인 경우 유효 상태 및 카운트
     const validFestivals = result.filter((f) => {
-      if (f.categoryType !== '축제') return true; // 상시 명소는 365일 노출
+      if (f.categoryType !== '축제') return true;
       const st = getFestivalStatus(f);
       return st === 'LIVE' || st === 'UPCOMING';
     });
@@ -68,9 +68,9 @@ export default function Home() {
       (f) => f.categoryType === '축제' && getFestivalStatus(f) === 'UPCOMING'
     ).length;
 
-    // 4차: 상태 필터 (LIVE vs UPCOMING)
+    // 4차: 축제 카테고리일 때만 상태 필터 적용 (축제가 아닐 때는 전체 노출)
     const finalFiltered = validFestivals.filter((f) => {
-      if (f.categoryType !== '축제') return selectedStatus === 'LIVE';
+      if (selectedCategory !== '축제') return true;
       return getFestivalStatus(f) === selectedStatus;
     });
 
@@ -81,17 +81,19 @@ export default function Home() {
     };
   }, [festivals, selectedRegion, selectedCategory, selectedStatus]);
 
-  // 진행 중 축제/명소가 0건일 때 UPCOMING 자동 전환
+  // 진행 중 축제가 0건이고 '축제' 카테고리일 때만 UPCOMING 자동 전환
   useEffect(() => {
-    if (!isLoading && festivals.length > 0) {
+    if (!isLoading && festivals.length > 0 && selectedCategory === '축제') {
       if (liveCount === 0 && upcomingCount > 0 && selectedStatus === 'LIVE') {
         setSelectedStatus('UPCOMING');
         setAutoSwitchedToUpcoming(true);
       } else if (liveCount > 0 && autoSwitchedToUpcoming) {
         setAutoSwitchedToUpcoming(false);
       }
+    } else {
+      setAutoSwitchedToUpcoming(false);
     }
-  }, [isLoading, festivals, liveCount, upcomingCount, selectedStatus, autoSwitchedToUpcoming]);
+  }, [isLoading, festivals, liveCount, upcomingCount, selectedStatus, selectedCategory, autoSwitchedToUpcoming]);
 
   // 필터 변경 시 첫 항목 자동 선택
   useEffect(() => {
@@ -128,22 +130,26 @@ export default function Home() {
             setAutoSwitchedToUpcoming(false);
           }}
         />
-        <StatusFilter
-          selectedStatus={selectedStatus}
-          onSelectStatus={(st) => {
-            setSelectedStatus(st);
-            setAutoSwitchedToUpcoming(false);
-          }}
-          liveCount={liveCount}
-          upcomingCount={upcomingCount}
-        />
+
+        {/* 진행 상태(LIVE / UPCOMING) 탭은 '축제' 카테고리일 때만 조건부 노출 */}
+        {selectedCategory === '축제' && (
+          <StatusFilter
+            selectedStatus={selectedStatus}
+            onSelectStatus={(st) => {
+              setSelectedStatus(st);
+              setAutoSwitchedToUpcoming(false);
+            }}
+            liveCount={liveCount}
+            upcomingCount={upcomingCount}
+          />
+        )}
 
         {/* 자동 전환 안내 토스트 배너 */}
         {autoSwitchedToUpcoming && (
           <div className="w-full bg-indigo-600 text-white px-3 py-1.5 text-xs font-bold flex items-center justify-between shadow-sm animate-fadeIn">
             <div className="flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-              <span>현재 조건의 진행 명소가 없어 가장 가까운 예정 축제를 안내합니다.</span>
+              <span>현재 조건의 진행 축제가 없어 가장 가까운 예정 축제를 안내합니다.</span>
             </div>
             <button
               onClick={() => setAutoSwitchedToUpcoming(false)}
