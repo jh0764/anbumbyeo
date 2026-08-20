@@ -213,59 +213,75 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 부산전역(26), 부산진구(26230), 수영구(26500), 남구(26290), 연제구(26470) 황령산 경계 4개 구 병렬 수집
-    const targetCodes = ['26', '26230', '26500', '26290', '26470', '26530', '26350', '11110', '11140', '42150', '44770'];
+    // 3. 통합 주차장 기본정보 API 수집
+    const targetCodes = ['26500', '26530', '26350', '26230', '26290', '26470', '11110', '11140', '42150', '44770'];
 
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
-    const fetchParkingPromises = targetCodes.map(async (code) => {
-      const addrType = code.length === 2 ? 'SIDO' : 'SIGUNGU';
-      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=${addrType}`;
-      const statusUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=${addrType}`;
-
+    const fetchInfoPromises = targetCodes.map(async (code) => {
+      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
       try {
-        const [iRes, sRes] = await Promise.all([
-          fetch(infoUrl, { cache: 'no-store', headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' } }),
-          fetch(statusUrl, { cache: 'no-store', headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' } }),
-        ]);
-
-        let iItems: any[] = [];
-        if (iRes.ok) {
-          const iJson = await iRes.json();
-          const raw = iJson?.data || iJson?.response?.body?.items?.item || iJson?.items;
-          iItems = Array.isArray(raw) ? raw : raw ? [raw] : [];
-        }
-
-        let sItems: any[] = [];
-        if (sRes.ok) {
-          const sJson = await sRes.json();
-          const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
-          sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
-        }
-
-        return { iItems, sItems };
+        const iRes = await fetch(infoUrl, {
+          cache: 'no-store',
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        });
+        if (!iRes.ok) return [];
+        const iJson = await iRes.json();
+        const raw = iJson?.data || iJson?.response?.body?.items?.item || iJson?.items;
+        return Array.isArray(raw) ? raw : raw ? [raw] : [];
       } catch {
-        return { iItems: [], sItems: [] };
+        return [];
       }
     });
 
-    const infoResults = await Promise.allSettled(fetchParkingPromises);
+    const infoResults = await Promise.allSettled(fetchInfoPromises);
 
     const seenCodes = new Set<string>();
     for (const resObj of infoResults) {
-      if (resObj.status === 'fulfilled' && resObj.value) {
-        const { iItems, sItems } = resObj.value;
-
-        for (const item of iItems) {
+      if (resObj.status === 'fulfilled' && Array.isArray(resObj.value)) {
+        for (const item of resObj.value) {
           const code = item.std_prl_cd || item.std_prk_mg_no;
           if (code && !seenCodes.has(code)) {
             seenCodes.add(code);
             parkingInfoList.push(item);
           }
         }
+      }
+    }
 
-        for (const st of sItems) {
+    // 4. [핵심 핀포인트 연동]: 수집된 기본정보 주차장(부산 26500... 포함)의 std_prl_cd로 실시간 API 핀포인트 1:1 파이프라인 수행
+    const codesToFetchStatus = Array.from(seenCodes).slice(0, 100);
+
+    const fetchStatusPromises = codesToFetchStatus.map(async (code) => {
+      const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
+      try {
+        const sRes = await fetch(statusUrl, {
+          cache: 'no-store',
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        });
+        if (!sRes.ok) return null;
+        const sJson = await sRes.json();
+        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
+        const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+        return sItems[0] || null;
+      } catch {
+        return null;
+      }
+    });
+
+    // 일반 실시간 API 수집과 핀포인트 API 수집을 병렬 수행
+    const [pinpointResults, generalStatusRes] = await Promise.allSettled([
+      Promise.all(fetchStatusPromises),
+      fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, {
+        cache: 'no-store',
+        headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+      }),
+    ]);
+
+    if (pinpointResults.status === 'fulfilled' && Array.isArray(pinpointResults.value)) {
+      for (const st of pinpointResults.value) {
+        if (st) {
           const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
           if (code) {
             parkingStatusMap.set(code, st);
@@ -274,7 +290,21 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 주차장 객체 생성 (300m 이내 직속 주차장은 면수 미기재되어도 보존)
+    if (generalStatusRes.status === 'fulfilled' && generalStatusRes.value.ok) {
+      try {
+        const sJson = await generalStatusRes.value.json();
+        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
+        const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+        for (const st of sItems) {
+          const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
+          if (code && !parkingStatusMap.has(code)) {
+            parkingStatusMap.set(code, st);
+          }
+        }
+      } catch {}
+    }
+
+    // 5. 주차장 객체 조인 및 1:1 파싱
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -285,13 +315,12 @@ export async function GET(request: NextRequest) {
       const isPublic = isPublicParkingDiv(info);
       const rawSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // 초소형 1~9면은 기본 배제하되, 면수가 미기재(0)라도 직속 주차장일 수 있으므로 일단 보존 후 거리 계산 시 300m 이내 판단
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      const totalSpaces = rawSpaces > 0 ? rawSpaces : 20; // 미기재 시 20면 가상 할당
+      const totalSpaces = rawSpaces > 0 ? rawSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 20);
 
       let availableSpaces = totalSpaces;
       if (status) {
@@ -322,7 +351,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 명소 기준 500m 이내 및 직속 키워드 최우선 할당
+    // 6. 명소 기준 500m 및 핀포인트 주차장 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -362,9 +391,7 @@ export async function GET(request: NextRequest) {
         const festLat = parseFloat(f.mapy);
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
-        const festTitle = f.title || '';
 
-        // 거리 계산 및 직속/초근접 가산점 적용
         const evaluatedLots = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -373,10 +400,12 @@ export async function GET(request: NextRequest) {
               p.name.includes('봉수대') ||
               p.name.includes('전망대') ||
               p.name.includes('쉼터') ||
+              p.name.includes('광안') ||
+              p.name.includes('민락') ||
+              p.name.includes('해운대') ||
               p.name.includes('삼락') ||
               p.name.includes('생태공원');
 
-            // 500m 이내 초근접이거나 직속 주차장이면 가상 순위 점수 대폭 우대 (score = distM - 2000)
             let priorityScore = distM;
             if (distM <= 500 || isDirectNameMatch) {
               priorityScore = distM - 2000;
@@ -390,20 +419,16 @@ export async function GET(request: NextRequest) {
             };
           })
           .filter((p) => {
-            // 300m 이내 초근접 주차장이면 면수 무관 포함, 300m 초과 시 10면 이상만 포함
             if (p.distanceMeters <= 300) return true;
             return p.totalSpaces >= 10;
           });
 
-        // 1단계: 1km 이내 유효 주차장
         let nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 1000);
 
-        // 2단계: 1km 내 주차장이 2개 미만이면 2km까지 유연 확장
         if (nearbyList.length < 2) {
           nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2000);
         }
 
-        // 500m 이내 초근접 / 직속 가산점(priorityScore) 기준으로 1순위 최정렬
         nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
 
         const publicParkings = nearbyList.filter((p) => p.isPublic).slice(0, 3);
@@ -463,7 +488,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[황령산/전망대 직속 500m 1순위 할당 완수 건수]', sortedFestivals.length);
+    console.log('[핀포인트 실시간 연동 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
