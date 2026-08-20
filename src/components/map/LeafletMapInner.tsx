@@ -78,7 +78,7 @@ function createParkingIcon(parking: Parking) {
   });
 }
 
-// 2. Focus Mode FitBounds 카메라 컨트롤러 (사용자가 선택했을 때만 이동, 재검색 시 위치 고정)
+// 2. Focus Mode FitBounds 카메라 컨트롤러 (선택된 축제가 있을 때만 동적 이동, 없을 때는 100% 뷰포트 고정)
 function FocusCameraController({
   selectedFestival,
   parkingLots,
@@ -90,7 +90,6 @@ function FocusCameraController({
   const prevIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 선택된 축제가 없으면 카메라를 이동하지 않고 보고 있던 위치 그대로 유지!
     if (!selectedFestival) {
       prevIdRef.current = null;
       return;
@@ -229,8 +228,8 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  // 기본 지도 초기 중심 좌표 (시청 기준)
-  const initialCenter = useRef<[number, number]>([37.5665, 126.9780]).current;
+  // 최초 1회 렌더링용 초기 좌표 고정
+  const defaultCenter = useRef<[number, number]>([37.5665, 126.9780]).current;
 
   // Focus Mode: 도보 700m 이내 주차장만 렌더링
   const displayParkingLots = useMemo(() => {
@@ -253,7 +252,7 @@ export default function LeafletMapInner({
   return (
     <div className="w-full h-full relative overflow-hidden">
       <MapContainer
-        center={initialCenter}
+        center={defaultCenter}
         zoom={14}
         preferCanvas={true}
         zoomControl={false}
