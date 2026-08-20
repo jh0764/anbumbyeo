@@ -3,7 +3,7 @@
 import { useRef, useEffect } from 'react';
 import { Festival, Parking } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
-import { Users, Car, MapPin, Calendar, Hourglass, AlertCircle, Navigation, Sparkles } from 'lucide-react';
+import { Users, Car, MapPin, Calendar, Clock, AlertCircle, Navigation, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface FestivalCarouselProps {
@@ -108,7 +108,7 @@ export default function FestivalCarousel({
 
                   {!isFestival ? (
                     <div className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-600 text-white flex items-center gap-1 shadow-2xs">
-                      <Sparkles className="w-3 h-3 text-amber-300" />
+                      <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
                       <span>연중무휴</span>
                     </div>
                   ) : status === 'LIVE' ? (
@@ -118,13 +118,14 @@ export default function FestivalCarousel({
                         getCrowdBadgeStyle(fest.crowdLevel)
                       )}
                     >
-                      <Users className="w-3 h-3" />
+                      <Users className="w-3 h-3 shrink-0" />
                       <span>{fest.crowdLevel}</span>
                     </div>
                   ) : (
+                    /* D-Day 뱃지: 텍스트 이모티콘 제거 및 단일 Lucide SVG 아이콘 사용 */
                     <div className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1 shadow-xs">
-                      <Hourglass className="w-3 h-3" />
-                      <span>⏳ {getDDayString(fest.startDate)}</span>
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span>{getDDayString(fest.startDate)}</span>
                     </div>
                   )}
                 </div>
@@ -141,7 +142,7 @@ export default function FestivalCarousel({
                 </p>
               </div>
 
-              {/* 하단 주차 정보 영역 */}
+              {/* 하단 주차 정보 영역 (진행 중 & 개막 예정 모두 실시간 1km 공영주차장 동일 연동) */}
               <div className="mt-2.5 pt-2 border-t border-slate-100 space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -152,28 +153,19 @@ export default function FestivalCarousel({
                       <div className="text-[10px] text-slate-400 leading-none truncate">
                         최단거리 · {nearestParking?.distance || '1km 내'}
                       </div>
-                      {!isFestival || status === 'LIVE' ? (
-                        nearestParking ? (
-                          <div className="text-xs font-bold text-indigo-900 mt-0.5 flex items-center gap-1 truncate">
-                            <span className="truncate">{nearestParking.name}</span>
-                            {isNearestFull ? (
-                              <span className="text-red-600 font-bold text-xs shrink-0">(만차)</span>
-                            ) : (
-                              <span className="text-indigo-600 font-extrabold shrink-0">
-                                잔여 {nearestParking.availableSpaces}면
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-xs font-medium text-slate-400 mt-0.5">1km 내 주차장 없음</div>
-                        )
-                      ) : (
-                        <div className="text-[10px] font-bold text-indigo-900 mt-0.5 truncate">
-                          총 {nearestParking?.totalSpaces ?? 100}면 주차 가능{' '}
-                          <span className="text-[9px] text-indigo-600 font-normal">
-                            (개막일 연동)
-                          </span>
+                      {nearestParking ? (
+                        <div className="text-xs font-bold text-indigo-900 mt-0.5 flex items-center gap-1 truncate">
+                          <span className="truncate">{nearestParking.name}</span>
+                          {isNearestFull ? (
+                            <span className="text-red-600 font-bold text-xs shrink-0">(만차)</span>
+                          ) : (
+                            <span className="text-indigo-600 font-extrabold shrink-0">
+                              잔여 {nearestParking.availableSpaces}면
+                            </span>
+                          )}
                         </div>
+                      ) : (
+                        <div className="text-xs font-medium text-slate-400 mt-0.5">1km 내 주차장 없음</div>
                       )}
                     </div>
                   </div>
@@ -192,7 +184,7 @@ export default function FestivalCarousel({
                 </div>
 
                 {/* 만차 시 차선책 추천 노출 */}
-                {(!isFestival || status === 'LIVE') && isNearestFull && alternativeParking && (
+                {isNearestFull && alternativeParking && (
                   <div className="p-1.5 bg-amber-50 rounded-lg border border-amber-200/80 flex items-center gap-1.5 text-[10px] text-amber-900 font-medium">
                     <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span className="truncate">

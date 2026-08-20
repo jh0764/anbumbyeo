@@ -133,7 +133,8 @@ export default function FestivalBottomSheet({
               </span>
             ) : (
               <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1">
-                ⏳ {getDDayString(festival.startDate)}
+                <Clock className="w-3.5 h-3.5" />
+                {getDDayString(festival.startDate)}
               </span>
             )}
           </div>
@@ -165,7 +166,7 @@ export default function FestivalBottomSheet({
 
           {sortedParkingLots.length === 0 ? (
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500 font-medium">
-              반경 1.5km 이내에 연계된 공영주차장이 없습니다. 대중교통 이용을 권장합니다.
+              반경 1km 이내에 연계된 공영주차장이 없습니다. 대중교통 이용을 권장합니다.
             </div>
           ) : (
             <div className="space-y-2">
@@ -235,7 +236,7 @@ export default function FestivalBottomSheet({
               <div className="grid grid-cols-1 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>운영 기간: {festival.period}</span>
+                  <span>행사 기간: {festival.period}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
