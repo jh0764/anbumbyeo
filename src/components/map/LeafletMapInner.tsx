@@ -77,7 +77,7 @@ function createParkingIcon(parking: Parking) {
   });
 }
 
-// 2. Focus Mode 시 선택 축제 + 주차장 좌표 FitBounds 카메라 조정
+// 2. Focus Mode: 도보 700m 주차장 + 축제 핀 타이트한 FitBounds 적용
 function FocusCameraController({
   selectedFestival,
   parkingLots,
@@ -105,12 +105,12 @@ function FocusCameraController({
       }
 
       if (points.length === 1) {
-        map.flyTo(points[0], 15, { animate: true, duration: 0.8 });
+        map.flyTo(points[0], 16, { animate: true, duration: 0.8 });
       } else {
         const bounds = L.latLngBounds(points);
         map.fitBounds(bounds, {
-          padding: [60, 60],
-          maxZoom: 15,
+          padding: [50, 50],
+          maxZoom: 16,
           animate: true,
           duration: 0.8,
         });
@@ -121,7 +121,7 @@ function FocusCameraController({
   return null;
 }
 
-// 3. 우측 상단 플로팅 컨트롤 (나침반, 줌인/아웃)
+// 3. 우측 상단 플로팅 컨트롤
 function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
   const map = useMap();
 
@@ -183,7 +183,7 @@ export default function LeafletMapInner({
     return [37.5665, 126.9780];
   }, [selectedFestival]);
 
-  // Focus Mode: 선택된 축제의 주변 반경 1.5km 주차장 상위 5개
+  // Focus Mode: 도보 700m 이내 주차장만 렌더링
   const displayParkingLots = useMemo(() => {
     if (!selectedFestival || !selectedFestival.parkingLots) return [];
 
@@ -195,6 +195,7 @@ export default function LeafletMapInner({
         seenParking.add(key);
         return true;
       })
+      .filter((p) => p.distanceMeters <= 700)
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
     return sorted.slice(0, 5);
@@ -219,9 +220,7 @@ export default function LeafletMapInner({
           parkingLots={displayParkingLots}
         />
 
-        {/* 1. 마커 조건부 렌더링:
-            - Focus Mode (selectedFestivalId 존재): 선택된 축제 1개만 노출
-            - Overall Mode (selectedFestivalId null): 전체 축제 마커 노출 */}
+        {/* 1. 마커 조건부 렌더링 */}
         {selectedFestival ? (
           <Marker
             key={`fest-focus-${selectedFestival.id}`}
@@ -241,7 +240,7 @@ export default function LeafletMapInner({
           ))
         )}
 
-        {/* 2. 주차장 마커 렌더링 (Focus Mode에서만 연계 5개 표시) */}
+        {/* 2. 주차장 마커 렌더링 (도보 700m 이내 주차장만) */}
         {selectedFestival &&
           displayParkingLots.map((parking, idx) => {
             const parkingKey = `parking-${parking.id || 'prk'}-${idx}`;

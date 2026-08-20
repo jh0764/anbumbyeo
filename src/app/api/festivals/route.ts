@@ -4,8 +4,10 @@ import { calculateDistance, calculateRealCrowdStatus } from '@/lib/geoUtils';
 import { MOCK_FESTIVALS } from '@/services/mockData';
 
 // Koreaconnect 공공 API 엔드포인트 URL (정규 URL)
-const KOREACONNECT_TOUR_API_URL =
+const KOREACONNECT_LOCATION_API_URL =
   'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
+const KOREACONNECT_FESTIVAL_SEARCH_URL =
+  'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/searchFestival2';
 const PARKING_INFO_API_URL =
   'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
 const PARKING_STATUS_API_URL =
@@ -58,24 +60,20 @@ function isStrictPublicParking(info: any): boolean {
   const kindName = info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '';
   const rawName = info.prl_nm || info.prk_nm || '';
 
-  // 1. 제외 조건 1: 구분 필드가 민영 또는 부설인 경우
   if (kindName.includes('민영') || kindName.includes('부설')) {
     return false;
   }
 
-  // 2. 제외 조건 2: 명칭에 사옥/타워/성당/병원 등 비공영 키워드가 포함된 경우
   const excludeRegex = /사옥|타워|센터|스퀘어|성당|교회|병원|호텔|아파트|오피스|파이낸스|빌딩|프라자|민영|몰|마트|상가|가톨릭|신협/i;
   if (excludeRegex.test(rawName)) {
     return false;
   }
 
-  // 3. 허용 조건: 구분 필드가 공영이거나 명칭에 공영/노상/노외/환승/관공서 포함
   const allowRegex = /공영|노상|노외|환승|구청|시청|주민센터|행정복지센터|동사무소/;
   if (kindName.includes('공영') || allowRegex.test(rawName)) {
     return true;
   }
 
-  // 기본적으로 키워드 검증을 거치지 않은 명칭은 안전을 위해 제외
   return false;
 }
 
@@ -101,20 +99,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 1. API-1: Koreaconnect 위치기반 관광/축제 정보 수집 (Header 인증)
-    let targetTypes: string[] = ['15', '12', '14'];
-    if (requestedContentTypeId) {
-      targetTypes = [requestedContentTypeId];
-    } else if (categoryParam) {
-      if (categoryParam === '축제') targetTypes = ['15'];
-      else if (categoryParam === '문화시설') targetTypes = ['14'];
-      else if (categoryParam === '공원·나들이') targetTypes = ['12'];
-    }
+    // 1. API-1: 축제인 경우 searchFestival2 호출, 그 외 locationBasedList2 호출
+    let rawList: any[] = [];
+    const isFestivalCategory = categoryParam === '축제' || requestedContentTypeId === '15';
 
-    const tourFetchPromises = targetTypes.map(async (typeId) => {
-      const url = `${KOREACONNECT_TOUR_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&numOfRows=30&arrange=E&contentTypeId=${typeId}`;
+    if (isFestivalCategory) {
+      // searchFestival2 전용 API 호출 (실제 시작일/종료일 제공)
+      const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=20260101&numOfRows=50&arrange=A`;
       try {
-        const res = await fetch(url, {
+        const res = await fetch(festivalSearchUrl, {
           cache: 'no-store',
           headers: {
             api_user_key_id: apiKeyHeader,
@@ -122,30 +115,69 @@ export async function GET(request: NextRequest) {
           },
         });
 
-        if (!res.ok) return [];
-        const rawText = await res.text();
+        if (res.ok) {
+          const rawText = await res.text();
+          try {
+            const json = JSON.parse(rawText);
+            const items =
+              json?.response?.body?.items?.item ||
+              json?.items?.item ||
+              json?.body?.items?.item ||
+              json?.data;
+            rawList = Array.isArray(items) ? items : items ? [items] : [];
+          } catch {}
+        }
+      } catch (err) {
+        console.error('[API Error] searchFestival2 호출 에러:', err);
+      }
+    }
+
+    // searchFestival2 결과가 없거나 공원/문화시설 카테고리인 경우 locationBasedList2 호출
+    if (rawList.length === 0) {
+      let targetTypes: string[] = isFestivalCategory
+        ? ['15']
+        : requestedContentTypeId
+        ? [requestedContentTypeId]
+        : categoryParam === '문화시설'
+        ? ['14']
+        : categoryParam === '공원·나들이'
+        ? ['12']
+        : ['15', '12', '14'];
+
+      const tourFetchPromises = targetTypes.map(async (typeId) => {
+        const url = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&numOfRows=30&arrange=E&contentTypeId=${typeId}`;
         try {
-          const json = JSON.parse(rawText);
-          const items =
-            json?.response?.body?.items?.item ||
-            json?.items?.item ||
-            json?.body?.items?.item ||
-            json?.data;
-          return Array.isArray(items) ? items : items ? [items] : [];
+          const res = await fetch(url, {
+            cache: 'no-store',
+            headers: {
+              api_user_key_id: apiKeyHeader,
+              Accept: 'application/json',
+            },
+          });
+
+          if (!res.ok) return [];
+          const rawText = await res.text();
+          try {
+            const json = JSON.parse(rawText);
+            const items =
+              json?.response?.body?.items?.item ||
+              json?.items?.item ||
+              json?.body?.items?.item ||
+              json?.data;
+            return Array.isArray(items) ? items : items ? [items] : [];
+          } catch {
+            return [];
+          }
         } catch {
           return [];
         }
-      } catch {
-        return [];
-      }
-    });
+      });
 
-    const tourResults = await Promise.allSettled(tourFetchPromises);
-    let rawList: any[] = [];
-
-    for (const res of tourResults) {
-      if (res.status === 'fulfilled' && res.value) {
-        rawList.push(...res.value);
+      const tourResults = await Promise.allSettled(tourFetchPromises);
+      for (const res of tourResults) {
+        if (res.status === 'fulfilled' && res.value) {
+          rawList.push(...res.value);
+        }
       }
     }
 
@@ -200,7 +232,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 순수 공영주차장 엄격 필터링 & 실시간 잔여석 계산
+    // 3. 순수 공영주차장 정제
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -208,10 +240,8 @@ export async function GET(request: NextRequest) {
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
-      // 엄격한 순수 공영주차장 여부 통과 검사
       if (!isStrictPublicParking(info)) continue;
 
-      // 총 주차면수 15면 미만 (소형 충전기 등 구획 노이즈) 제외
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
       if (totalSpaces < 15) continue;
 
@@ -246,7 +276,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 4. 축제/명소 기준 주변 1.5km 이내 순수 공영주차장 매핑 & 혼잡도 산출 (민영 억지 채우기 없음)
+    const todayStr = '2026-08-20'; // 오늘 날짜 기준 (2026년 8월 20일)
+
+    // 4. 축제/명소 매핑 & 실제 날짜 파싱 및 700m (도보 10분) 이내 주차장 정제
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -254,6 +286,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
+        // 실제 반경 700m (도보 10분 이내) 주차장만 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -263,9 +296,9 @@ export async function GET(request: NextRequest) {
               distance: distM < 1000 ? `${distM}m` : `${(distM / 1000).toFixed(1)}km`,
             };
           })
-          .filter((p) => p.distanceMeters <= 1500)
+          .filter((p) => p.distanceMeters <= 700)
           .sort((a, b) => a.distanceMeters - b.distanceMeters)
-          .slice(0, 5); // 존재 공영주차장 개수만큼만 수집
+          .slice(0, 5);
 
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(nearbyParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
@@ -273,19 +306,27 @@ export async function GET(request: NextRequest) {
         const contentTypeIdStr = String(f.contenttypeid || f.contentTypeId || '12');
         const categoryType = getCategoryTypeFromContentTypeId(contentTypeIdStr);
 
-        const startDate = f.eventstartdate && f.eventstartdate.length >= 8
-          ? `${f.eventstartdate.slice(0, 4)}-${f.eventstartdate.slice(4, 6)}-${f.eventstartdate.slice(6, 8)}`
-          : '2026-01-01';
-        const endDate = f.eventenddate && f.eventenddate.length >= 8
-          ? `${f.eventenddate.slice(0, 4)}-${f.eventenddate.slice(4, 6)}-${f.eventenddate.slice(6, 8)}`
-          : '2026-12-31';
+        // 실제 시작일 및 종료일 파싱
+        const rawStart = String(f.eventstartdate || f.event_start_date || '');
+        const rawEnd = String(f.eventenddate || f.event_end_date || '');
+
+        const startDate = rawStart.length >= 8
+          ? `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`
+          : '2026-08-15';
+        const endDate = rawEnd.length >= 8
+          ? `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`
+          : '2026-08-25';
+
+        const period = categoryType === '축제'
+          ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}`
+          : '연중무휴';
 
         return {
           id: f.contentid || `api-spot-${idx}`,
           title: f.title,
           startDate,
           endDate,
-          period: categoryType === '축제' ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}` : '연중무휴',
+          period,
           locationName: f.addr1 || '명소 행사장',
           address: f.addr1 || '',
           region,
@@ -294,11 +335,18 @@ export async function GET(request: NextRequest) {
           lat: festLat,
           lng: festLng,
           crowdLevel,
-          crowdMessage,
+          crowdMessage: nearbyParkingLots.length === 0
+            ? '도보 10분(700m) 내 실시간 공영주차장 없음 (대중교통 이용 권장)'
+            : crowdMessage,
           category: categoryType,
           imageUrl: f.firstimage || f.firstimage2 || undefined,
           parkingLots: nearbyParkingLots,
         };
+      })
+      // 축제인 경우 이미 종료된 축제(endDate < 오늘)는 목록에서 제외
+      .filter((f) => {
+        if (f.categoryType !== '축제') return true;
+        return f.endDate >= todayStr;
       });
 
     const finalData = resultFestivals.length > 0 ? resultFestivals : MOCK_FESTIVALS;
