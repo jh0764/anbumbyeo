@@ -12,59 +12,10 @@ const PARKING_INFO_API_URL =
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
-// 주요 자치구 법정동 시군구 코드 (5자리) 사전 맵핑
-const SIGUNGU_CODE_MAP: Record<string, string> = {
-  // 부산
-  '부산 수영구': '26500', '부산 해운대구': '26350', '부산 사상구': '26530', '부산 부산진구': '26230',
-  '부산 강서구': '26440', '부산 동래구': '26260', '부산 남구': '26290', '부산 북구': '26320',
-  '부산 사하구': '26380', '부산 금정구': '26410', '부산 연제구': '26470', '부산 기장군': '26710',
-  '부산 중구': '26110', '부산 서구': '26140', '부산 동구': '26170', '부산 영도구': '26200',
-  // 서울
-  '서울 종로구': '11110', '서울 중구': '11140', '서울 용산구': '11170', '서울 성동구': '11200',
-  '서울 마포구': '11440', '서울 강남구': '11680', '서울 영등포구': '11560', '서울 송파구': '11710',
-  '서울 서초구': '11650', '서울 강서구': '11500', '서울 관악구': '11620', '서울 강동구': '11740',
-  // 대구
-  '대구 중구': '27110', '대구 동구': '27140', '대구 수성구': '27260', '대구 달서구': '27290',
-  // 대전
-  '대전 유성구': '30200', '대전 서구': '30170', '대전 중구': '30140', '대전 동구': '30110',
-  // 강원
-  '강원 강릉시': '42150', '강원 춘천시': '42110', '강원 속초시': '42210',
-  // 충청
-  '충남 서천군': '44770', '충남 보령시': '44180', '충북 청주시': '43110',
-  // 전라
-  '전남 여수시': '46130', '전북 전주시': '45111', '광주 동구': '29110',
-  // 경상
-  '경북 경주시': '47130', '울산 남구': '31140',
-  // 제주
-  '제주 제주시': '50110', '제주 서귀포시': '50130',
-};
-
-function getSigunguCodeFromAddress(address: string, lat: number, lng: number): string {
-  if (!address) return '11110';
-
-  for (const [key, code] of Object.entries(SIGUNGU_CODE_MAP)) {
-    if (address.includes(key) || (key.split(' ')[1] && address.includes(key.split(' ')[1]))) {
-      return code;
-    }
-  }
-
-  if (address.includes('사상') || address.includes('삼락')) return '26530';
-  if (address.includes('수영') || address.includes('광안')) return '26500';
-  if (address.includes('해운대')) return '26350';
-  if (address.includes('부산')) return '26500';
-
-  if (address.includes('대구')) return '27110';
-  if (address.includes('대전')) return '30200';
-  if (address.includes('서울')) return '11110';
-
-  if (lng > 129.0 && lat < 35.3) return '26500';
-  return '11110';
-}
-
 function getRegionFromAddress(address: string, lat: number, lng: number): Region {
   if (!address) return '서울';
 
-  if (address.includes('부산') || address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('삼락')) {
+  if (address.includes('부산') || address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('황령산') || address.includes('부산진') || address.includes('연제') || address.includes('남구')) {
     return '부산';
   }
   if (address.includes('대구') || address.includes('수성') || address.includes('달서')) {
@@ -131,7 +82,7 @@ function isPublicParkingDiv(info: any): boolean {
   if (divName.includes('민영') || divName.includes('부설')) {
     return false;
   }
-  if (divName.includes('공영') || rawName.includes('공영') || rawName.includes('구청') || rawName.includes('시청') || rawName.includes('동사무소') || rawName.includes('주민센터') || rawName.includes('생태공원') || rawName.includes('체육공원')) {
+  if (divName.includes('공영') || rawName.includes('공영') || rawName.includes('구청') || rawName.includes('시청') || rawName.includes('동사무소') || rawName.includes('주민센터') || rawName.includes('생태공원') || rawName.includes('체육공원') || rawName.includes('전망대') || rawName.includes('황령산')) {
     return true;
   }
   return false;
@@ -174,7 +125,6 @@ function parseFeeInfoFromApi(info: any, isPublic: boolean): string {
   return '현장 요금제';
 }
 
-// 순수 종교시설 키워드 판별 유틸
 function isReligiousFacility(title: string, address: string): boolean {
   const religiousRegex = /교회|성당|기도원|교구|순례지|선원|사찰|성지|천주교|대성당/i;
   return religiousRegex.test(title) || religiousRegex.test(address);
@@ -263,29 +213,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 축제/명소 주소 기반 시군구 코드(addr_cd) 동적 파싱 & 주차장 API 수집
-    const targetCenterLat = parseFloat(mapY);
-    const targetCenterLng = parseFloat(mapX);
-
-    // 수집된 항목들의 주소 기반 시군구 코드들 추출
-    const dynamicSigunguCodes = new Set<string>();
-    dynamicSigunguCodes.add(getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng));
-
-    for (const item of rawList.slice(0, 30)) {
-      const addr = item.addr1 || '';
-      const code = getSigunguCodeFromAddress(addr, parseFloat(item.mapy || '0'), parseFloat(item.mapx || '0'));
-      dynamicSigunguCodes.add(code);
-    }
-    dynamicSigunguCodes.add('26530'); // 사상구(삼락공원)
-    dynamicSigunguCodes.add('26500'); // 수영구(광안리)
-    dynamicSigunguCodes.add('26350'); // 해운대구
+    // 3. 부산 전역(26) 및 광역 시도/시군구 통합 주차장 Pool 일괄 병렬 수집
+    // 광역시도 코드: 26(부산전역), 11(서울), 27(대구), 30(대전), 41(경기) 등
+    const targetCodes = ['26', '26500', '26530', '26350', '26230', '11110', '11140', '42150', '44770'];
 
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
-    const fetchParkingPromises = Array.from(dynamicSigunguCodes).map(async (code) => {
-      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
-      const statusUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+    const fetchParkingPromises = targetCodes.map(async (code) => {
+      const addrType = code.length === 2 ? 'SIDO' : 'SIGUNGU';
+      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=${addrType}`;
+      const statusUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=${addrType}`;
 
       try {
         const [iRes, sRes] = await Promise.all([
@@ -337,7 +275,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 최소 주차면수(10면 이상) 필터링 & 요금 표기 적용
+    // 4. 최소 주차면수(10면 이상) 필터링 & 실시간/요금 표기 파싱
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -348,7 +286,7 @@ export async function GET(request: NextRequest) {
       const isPublic = isPublicParkingDiv(info);
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // 1~9면 초소형 부설주차장 필터링 삭제
+      // 초소형 1~9면 부설 주차장 배제
       if (totalSpaces < 10) continue;
 
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
@@ -385,7 +323,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 공원·나들이 탭 종교시설 100% 필터링 삭제 및 대형공원 2차 거리 확장
+    // 5. 황령산/산악/전망대/경계지 포함 유연한 2단계 반경 확장 (최대 2km)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -393,7 +331,6 @@ export async function GET(request: NextRequest) {
         const titleStr = String(f.title || '');
         const addrStr = String(f.addr1 || '');
 
-        // [공원·나들이 탭 핵심 필터링]: 교회/성당/기도원 등 종교시설 100% 제거
         if (typeIdStr === '12' || categoryParam === '공원·나들이') {
           if (isReligiousFacility(titleStr, addrStr)) {
             return false;
@@ -426,9 +363,8 @@ export async function GET(request: NextRequest) {
         const festLat = parseFloat(f.mapy);
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
-        const festTitle = f.title || '';
 
-        // 1차: 1km(1000m) 이내 주차장 수집
+        // 1단계: 1km(1000m) 이내 주차장 검색
         let allNearby = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -441,9 +377,8 @@ export async function GET(request: NextRequest) {
           .filter((p) => p.distanceMeters <= 1000)
           .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-        // 삼락생태공원 등 넓은 야외 대형공원의 경우 1km 내 주차장이 0개이면 2km까지 2차 확장
-        const isLargePark = festTitle.includes('생태공원') || festTitle.includes('삼락') || festTitle.includes('체육공원') || festTitle.includes('수변공원');
-        if (allNearby.length === 0 && isLargePark) {
+        // 2단계: 1km 내 주차장이 2개 미만인 경우 2km(2000m)까지 유연 확장
+        if (allNearby.length < 2) {
           allNearby = combinedParkingLots
             .map((p) => {
               const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -457,6 +392,7 @@ export async function GET(request: NextRequest) {
             .sort((a, b) => a.distanceMeters - b.distanceMeters);
         }
 
+        // [공영] 우선 최단거리순 3개 + [민영] 최단거리순 2개 (최대 5개)
         const publicParkings = allNearby.filter((p) => p.isPublic).slice(0, 3);
         const privateParkings = allNearby.filter((p) => !p.isPublic).slice(0, 2);
 
@@ -514,7 +450,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[동적 시군구 & 종교시설 필터링 완수 건수]', sortedFestivals.length);
+    console.log('[부산전역 광역 수집 & 2단계 유연 반경 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
