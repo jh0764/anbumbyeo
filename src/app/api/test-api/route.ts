@@ -5,7 +5,7 @@ const KOREACONNECT_TOUR_API_URL =
 const PARKING_INFO_API_URL =
   'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
 const PARKING_STATUS_API_URL =
-  'https://api.koreaconnect.kr/01/7/2606081732514722503DCP/LOGIS/api/v1/parking/status';
+  'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
 export async function GET(request: NextRequest) {
   const tourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     testResults.apis.koreaconnectTourAPI = { error: err.message };
   }
 
-  // 2. API-2: 통합 주차장 기본 정보
+  // 2. API-2: 통합 주차장 기본 정보 (parking/info)
   try {
     const url2 = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000`;
     const res2 = await fetch(url2, {
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     testResults.apis.parkingInfoAPI = { error: err.message };
   }
 
-  // 3. API-3: 실시간 주차 현황
+  // 3. API-3: 실시간 주차 현황 (parking/status) - 정규 URL 적용
   try {
     const url3 = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`;
     const res3 = await fetch(url3, {

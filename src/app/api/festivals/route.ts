@@ -3,13 +3,13 @@ import { Festival, Parking, Region, CategoryType } from '@/types';
 import { calculateDistance, calculateRealCrowdStatus } from '@/lib/geoUtils';
 import { MOCK_FESTIVALS } from '@/services/mockData';
 
-// Koreaconnect 공공 API 엔드포인트 URL
+// Koreaconnect 공공 API 엔드포인트 URL (정규 URL)
 const KOREACONNECT_TOUR_API_URL =
   'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
 const PARKING_INFO_API_URL =
   'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
 const PARKING_STATUS_API_URL =
-  'https://api.koreaconnect.kr/01/7/2606081732514722503DCP/LOGIS/api/v1/parking/status';
+  'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
 function getRegionFromAddress(address: string, lat: number, lng: number): Exclude<Region, '전체'> {
   if (!address) return '서울·수도권';
@@ -43,6 +43,14 @@ function getCategoryTypeFromContentTypeId(contentTypeId?: string): CategoryType 
   if (contentTypeId === '15') return '축제';
   if (contentTypeId === '14') return '문화시설';
   return '공원·나들이';
+}
+
+// 주차장 명칭 정제 유틸
+function cleanParkingName(name: string): string {
+  if (!name) return '공영주차장';
+  return name
+    .replace(/\(구\)|\(시\)|\(도\)|완속충전기|급속충전기|\[전기차충전소\]/gi, '')
+    .trim();
 }
 
 export async function GET(request: NextRequest) {
@@ -166,26 +174,46 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 좌표가 유효한 주차장 통합 및 실시간 연동 플래그 처리
+    // 3. 순수 공영주차장 정제 & 실시간 잔여석 계산
     const combinedParkingLots: Parking[] = [];
+    const excludeKeywords = ['호텔', '아파트', '빌딩', '오피스', '마트', '상가', '병원', '교회'];
+
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
+      const rawName = info.prl_nm || info.prk_nm || '';
+
+      // 민영/부설 키워드 필터링
+      if (excludeKeywords.some((kw) => rawName.includes(kw))) continue;
+
+      // 총 주차면수 15면 미만 (소형 충전기 등 구획 노이즈) 제외
+      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+      if (totalSpaces < 15) continue;
+
+      const cleanedName = cleanParkingName(rawName);
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      const totalSpaces = parseInt(info.sum_park_cnt || status?.sum_park_cnt || '100', 10);
-      const curUseSpaces = status
-        ? parseInt(status?.sum_curr_use_park_cnt || status?.cur_use_prk_cnt || '0', 10)
-        : 0;
-      const availableSpaces = isRealtime ? Math.max(0, totalSpaces - curUseSpaces) : totalSpaces;
+      // 점유 대수 및 실시간 잔여석 계산 (total - occupied)
+      let occupied = 0;
+      if (status) {
+        occupied = parseInt(
+          status.now_park_cnt || status.sum_curr_use_park_cnt || status.cur_use_prk_cnt || '0',
+          10
+        );
+      } else {
+        // 실시간 연동이 없는 공영주차장은 평균 30~45% 점유 가정
+        occupied = Math.floor(totalSpaces * 0.35);
+      }
+
+      const availableSpaces = Math.max(0, totalSpaces - occupied);
 
       combinedParkingLots.push({
         id: code,
-        name: info.prl_nm || info.prk_nm || '공영주차장',
+        name: cleanedName,
         lat,
         lng,
         totalSpaces,
@@ -197,7 +225,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. 축제 기준 주변 1.5km 이내 실제 주차장 매핑
+    // 4. 축제/명소 기준 주변 1.5km 이내 실제 주차장 매핑 & 혼잡도 산출
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
