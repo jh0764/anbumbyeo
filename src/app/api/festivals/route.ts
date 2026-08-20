@@ -79,10 +79,10 @@ function isPublicParkingDiv(info: any): boolean {
   const divName = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '');
   const rawName = String(info.prl_nm || info.prk_nm || '');
 
-  if (divName.includes('민영') || divName.includes('부설')) {
+  if (divName.includes('민영')) {
     return false;
   }
-  if (divName.includes('공영') || rawName.includes('공영') || rawName.includes('구청') || rawName.includes('시청') || rawName.includes('동사무소') || rawName.includes('주민센터') || rawName.includes('생태공원') || rawName.includes('체육공원') || rawName.includes('전망대') || rawName.includes('황령산')) {
+  if (divName.includes('공영') || divName.includes('부설') || divName.includes('노외') || rawName.includes('공영') || rawName.includes('구청') || rawName.includes('시청') || rawName.includes('동사무소') || rawName.includes('주민센터') || rawName.includes('생태공원') || rawName.includes('체육공원') || rawName.includes('전망대') || rawName.includes('황령산') || rawName.includes('봉수대') || rawName.includes('쉼터')) {
     return true;
   }
   return false;
@@ -213,9 +213,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 부산 전역(26) 및 광역 시도/시군구 통합 주차장 Pool 일괄 병렬 수집
-    // 광역시도 코드: 26(부산전역), 11(서울), 27(대구), 30(대전), 41(경기) 등
-    const targetCodes = ['26', '26500', '26530', '26350', '26230', '11110', '11140', '42150', '44770'];
+    // 3. 부산전역(26), 부산진구(26230), 수영구(26500), 남구(26290), 연제구(26470) 황령산 경계 4개 구 병렬 수집
+    const targetCodes = ['26', '26230', '26500', '26290', '26470', '26530', '26350', '11110', '11140', '42150', '44770'];
 
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
@@ -275,7 +274,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 최소 주차면수(10면 이상) 필터링 & 실시간/요금 표기 파싱
+    // 4. 주차장 객체 생성 (300m 이내 직속 주차장은 면수 미기재되어도 보존)
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -284,15 +283,15 @@ export async function GET(request: NextRequest) {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
       const isPublic = isPublicParkingDiv(info);
-      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+      const rawSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // 초소형 1~9면 부설 주차장 배제
-      if (totalSpaces < 10) continue;
-
+      // 초소형 1~9면은 기본 배제하되, 면수가 미기재(0)라도 직속 주차장일 수 있으므로 일단 보존 후 거리 계산 시 300m 이내 판단
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
+
+      const totalSpaces = rawSpaces > 0 ? rawSpaces : 20; // 미기재 시 20면 가상 할당
 
       let availableSpaces = totalSpaces;
       if (status) {
@@ -323,7 +322,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 황령산/산악/전망대/경계지 포함 유연한 2단계 반경 확장 (최대 2km)
+    // 5. 명소 기준 500m 이내 및 직속 키워드 최우선 할당
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -363,38 +362,52 @@ export async function GET(request: NextRequest) {
         const festLat = parseFloat(f.mapy);
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
+        const festTitle = f.title || '';
 
-        // 1단계: 1km(1000m) 이내 주차장 검색
-        let allNearby = combinedParkingLots
+        // 거리 계산 및 직속/초근접 가산점 적용
+        const evaluatedLots = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
+            const isDirectNameMatch =
+              p.name.includes('황령산') ||
+              p.name.includes('봉수대') ||
+              p.name.includes('전망대') ||
+              p.name.includes('쉼터') ||
+              p.name.includes('삼락') ||
+              p.name.includes('생태공원');
+
+            // 500m 이내 초근접이거나 직속 주차장이면 가상 순위 점수 대폭 우대 (score = distM - 2000)
+            let priorityScore = distM;
+            if (distM <= 500 || isDirectNameMatch) {
+              priorityScore = distM - 2000;
+            }
+
             return {
               ...p,
               distanceMeters: distM,
               distance: formatWalkingDistanceText(distM),
+              priorityScore,
             };
           })
-          .filter((p) => p.distanceMeters <= 1000)
-          .sort((a, b) => a.distanceMeters - b.distanceMeters);
+          .filter((p) => {
+            // 300m 이내 초근접 주차장이면 면수 무관 포함, 300m 초과 시 10면 이상만 포함
+            if (p.distanceMeters <= 300) return true;
+            return p.totalSpaces >= 10;
+          });
 
-        // 2단계: 1km 내 주차장이 2개 미만인 경우 2km(2000m)까지 유연 확장
-        if (allNearby.length < 2) {
-          allNearby = combinedParkingLots
-            .map((p) => {
-              const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
-              return {
-                ...p,
-                distanceMeters: distM,
-                distance: formatWalkingDistanceText(distM),
-              };
-            })
-            .filter((p) => p.distanceMeters <= 2000)
-            .sort((a, b) => a.distanceMeters - b.distanceMeters);
+        // 1단계: 1km 이내 유효 주차장
+        let nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 1000);
+
+        // 2단계: 1km 내 주차장이 2개 미만이면 2km까지 유연 확장
+        if (nearbyList.length < 2) {
+          nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2000);
         }
 
-        // [공영] 우선 최단거리순 3개 + [민영] 최단거리순 2개 (최대 5개)
-        const publicParkings = allNearby.filter((p) => p.isPublic).slice(0, 3);
-        const privateParkings = allNearby.filter((p) => !p.isPublic).slice(0, 2);
+        // 500m 이내 초근접 / 직속 가산점(priorityScore) 기준으로 1순위 최정렬
+        nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
+
+        const publicParkings = nearbyList.filter((p) => p.isPublic).slice(0, 3);
+        const privateParkings = nearbyList.filter((p) => !p.isPublic).slice(0, 2);
 
         const finalParkingLots: Parking[] = [...publicParkings, ...privateParkings];
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
@@ -450,7 +463,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[부산전역 광역 수집 & 2단계 유연 반경 완수 건수]', sortedFestivals.length);
+    console.log('[황령산/전망대 직속 500m 1순위 할당 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
