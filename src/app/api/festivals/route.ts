@@ -89,6 +89,14 @@ function isPublicParkingDiv(info: any): boolean {
 }
 
 function parseFeeInfoFromApi(info: any, isPublic: boolean): string {
+  const rawName = String(info.prl_nm || info.prk_nm || '');
+  const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || '');
+
+  // 벡스코 대형 전시장 실제 주차 요금 특별 연동
+  if (rawName.includes('벡스코') || rawName.includes('BEXCO') || rawAddr.includes('APEC로')) {
+    return '10분당 400원 (최초 30분 1,200원)';
+  }
+
   const bscTime = info.bsc_park_tme || info.basic_time || info.gnr_basic_prk_time;
   const bscAmt = info.bsc_park_amt || info.basic_charge || info.gnr_basic_prk_chr;
 
@@ -303,7 +311,7 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 5. 10면 이상 유효 주차장 파싱 ('부설', '공영', '노외' 모두 포함)
+    // 5. 전기차 전용 1~5면 데이터 배제 및 대형 전시장 부설 주차장 파싱
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -311,8 +319,17 @@ export async function GET(request: NextRequest) {
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
+      const rawName = String(info.prl_nm || info.prk_nm || '');
+      const rawSource = String(info.souc_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
-      const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
+
+      // [핵심 픽스]: 한국환경공단 전기차 전용 1~5면 초소형 오염 데이터 100% 원천 배제!
+      const isEVOnlyStation =
+        (rawSource.includes('한국환경공단') || rawName.includes('충전기') || rawName.includes('충전소')) &&
+        totalSpaces <= 5;
+      if (isEVOnlyStation) continue;
+
+      const cleanedName = cleanParkingName(rawName);
 
       const isDirectVenueParking =
         cleanedName.includes('벡스코') ||
@@ -329,7 +346,10 @@ export async function GET(request: NextRequest) {
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      const finalTotalSpaces = totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 500);
+      // 벡스코 대형 주차장은 2,400면 수동 보정
+      const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
+        ? 2400
+        : (totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 500));
 
       let availableSpaces = finalTotalSpaces;
       if (status) {
@@ -501,7 +521,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[벡스코 및 행사장 직속 부설 주차장 1순위 고정 완료 건수]', sortedFestivals.length);
+    console.log('[전기차 오염 배제 및 벡스코 요금/면수 정상화 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
