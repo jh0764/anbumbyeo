@@ -56,6 +56,8 @@ export async function GET(request: NextRequest) {
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
+    console.log('[Backend API Init] TOUR_API_KEY 감지 상태:', API_USER_KEY ? 'Key Loaded' : 'No Key');
+
     // 1. API 키 미설정 시 백업 데이터 리턴
     if (!API_USER_KEY) {
       console.warn('[API Notice] TOUR_API_KEY 미설정으로 백업 데이터를 제공합니다.');
@@ -110,7 +112,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 수집 결과가 0건일 때 안전 백업 리턴
+    // 수집 결과가 0건일 때 백업 리턴
     if (rawList.length === 0) {
       console.warn('[API Notice] 공공 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
       console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
@@ -266,10 +268,8 @@ export async function GET(request: NextRequest) {
 
     const finalData = resultFestivals.length > 0 ? resultFestivals : MOCK_FESTIVALS;
 
-    // 터미널 디버그 로깅
     console.log('실제 API 수집 건수:', finalData.length);
 
-    // 규격 통일: { success: true, data: resultFestivals }
     return NextResponse.json({
       success: true,
       data: finalData,

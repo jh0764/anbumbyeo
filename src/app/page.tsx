@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Header from '@/components/common/Header';
 import RegionFilter from '@/components/common/RegionFilter';
 import CategoryFilter from '@/components/common/CategoryFilter';
@@ -23,24 +23,25 @@ export default function Home() {
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 백엔드 API 호출 및 실데이터 수집 (하드코딩 덮어쓰기)
-  const loadFestivals = async () => {
+  // 백엔드 API 호출 및 실데이터 수집 함수
+  const loadFestivals = useCallback(async (cat: CategoryType) => {
     setIsLoading(true);
     try {
-      const data = await fetchFestivals({ category: selectedCategory });
-      if (data && data.length > 0) {
+      const data = await fetchFestivals({ category: cat });
+      if (data && Array.isArray(data)) {
         setFestivals(data);
       }
     } catch (err) {
-      console.error('Failed to load real festivals from API:', err);
+      console.error('Failed to load festivals from API:', err);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadFestivals();
   }, []);
+
+  // 카테고리 변경 시 데이터 패칭 (고정된 deps: [selectedCategory, loadFestivals])
+  useEffect(() => {
+    loadFestivals(selectedCategory);
+  }, [selectedCategory, loadFestivals]);
 
   // 권역 -> 카테고리 -> 상태 순 필터링
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
@@ -95,9 +96,9 @@ export default function Home() {
     } else {
       setAutoSwitchedToUpcoming(false);
     }
-  }, [isLoading, festivals, liveCount, upcomingCount, selectedStatus, selectedCategory, autoSwitchedToUpcoming]);
+  }, [isLoading, festivals.length, liveCount, upcomingCount, selectedStatus, selectedCategory, autoSwitchedToUpcoming]);
 
-  // 필터 변경 시 첫 항목 자동 선택
+  // 필터 변경 시 첫 항목 자동 선택 (고정된 deps: [filteredFestivals, selectedFestivalId])
   useEffect(() => {
     if (filteredFestivals.length > 0) {
       const exists = filteredFestivals.some((f) => f.id === selectedFestivalId);
