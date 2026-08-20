@@ -3,13 +3,10 @@ import { Festival, Parking, Region, CategoryType } from '@/types';
 import { calculateDistance, calculateCrowdScore } from '@/lib/geoUtils';
 import { MOCK_FESTIVALS } from '@/services/mockData';
 
-// Koreaconnect 공공 API 엔드포인트
-const FESTIVAL_API_URL =
-  'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
-const PARKING_INFO_API_URL =
-  'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
-const PARKING_STATUS_API_URL =
-  'https://api.koreaconnect.kr/01/7/2606081732514722503DCP/LOGIS/api/v1/parking/status';
+// API 엔드포인트 URL
+const KOREA_TOUR_API_URL = 'http://apis.data.go.kr/B551011/KorService1/locationBasedList1';
+const PARKING_INFO_API_URL = 'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
+const PARKING_STATUS_API_URL = 'https://api.koreaconnect.kr/01/7/2606081732514722503DCP/LOGIS/api/v1/parking/status';
 
 function getRegionFromAddress(address: string, lat: number, lng: number): Exclude<Region, '전체'> {
   if (!address) return '서울·수도권';
@@ -45,58 +42,6 @@ function getCategoryTypeFromContentTypeId(contentTypeId?: string): Exclude<Categ
   return '공원·나들이';
 }
 
-// Koreaconnect 위치기반 목록 API 호출 헬퍼
-async function callLocationBasedList(
-  key: string,
-  typeId: string,
-  mapX: string,
-  mapY: string,
-  radius: string
-): Promise<any[]> {
-  try {
-    const params = new URLSearchParams({
-      api_user_key_id: key,
-      MobileOS: 'ETC',
-      MobileApp: 'anbumbyeo',
-      _type: 'json',
-      listYN: 'Y',
-      arrange: 'A',
-      contentTypeId: typeId,
-      mapX,
-      mapY,
-      radius,
-      numOfRows: '30',
-    });
-
-    const url = `${FESTIVAL_API_URL}?${params.toString()}`;
-    const festRes = await fetch(url, { next: { revalidate: 60 } });
-
-    const rawText = await festRes.text();
-    console.log('[Koreaconnect Raw Response]:', rawText);
-
-    if (!festRes.ok) {
-      console.error(`[API Error] HTTP status: ${festRes.status}`);
-      return [];
-    }
-
-    try {
-      const json = JSON.parse(rawText);
-      const items =
-        json?.response?.body?.items?.item ||
-        json?.items?.item ||
-        json?.body?.items?.item ||
-        json?.data;
-      return Array.isArray(items) ? items : items ? [items] : [];
-    } catch (parseError) {
-      console.error('[API JSON Parse Error]:', parseError);
-      return [];
-    }
-  } catch (err) {
-    console.error('[API Fetch Exception]:', err);
-    return [];
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -106,30 +51,23 @@ export async function GET(request: NextRequest) {
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
-    // 환경 변수 읽기
-    const rawApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
+    const rawTourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
+    const parkingApiKey = process.env.PARKING_API_KEY || '';
 
-    console.log('[API Status]', rawApiKey ? 'API Key Detected' : 'No Key');
-
-    // API 키 미설정 시 백업 데이터 리턴
-    if (!rawApiKey) {
-      console.warn('[API Notice] API 키 미설정으로 백업 데이터를 제공합니다.');
-      console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
+    // 키 미설정 시 안전 백업 리턴
+    if (!rawTourApiKey && !parkingApiKey) {
+      console.warn('[API Notice] TOUR_API_KEY 및 PARKING_API_KEY가 미설정되어 백업 데이터를 제공합니다.');
       return NextResponse.json({
         success: true,
         data: MOCK_FESTIVALS,
       });
     }
 
-    // 2. 인증키 Decoding / Encoding 변형 준비
-    const decodedKey = decodeURIComponent(rawApiKey);
-    const encodedKey = encodeURIComponent(decodedKey);
-    const candidateKeys = [rawApiKey, decodedKey, encodedKey].filter(
-      (v, i, a) => v && a.indexOf(v) === i
-    );
+    const decodedTourKey = decodeURIComponent(rawTourApiKey);
+    const encodedTourKey = encodeURIComponent(decodedTourKey);
 
-    // 3. contentTypeId 12(관광지/공원), 14(문화시설), 15(축제) 동적 반영
-    let targetTypes: string[] = ['12', '15', '14'];
+    // 1. API-1: 한국관광공사 위치기반 관광/축제 정보 (apis.data.go.kr)
+    let targetTypes: string[] = ['15', '12', '14'];
     if (requestedContentTypeId) {
       targetTypes = [requestedContentTypeId];
     } else if (categoryParam) {
@@ -138,84 +76,85 @@ export async function GET(request: NextRequest) {
       else if (categoryParam === '공원·나들이') targetTypes = ['12'];
     }
 
+    const tourFetchPromises = targetTypes.map(async (typeId) => {
+      const url = `${KOREA_TOUR_API_URL}?serviceKey=${encodedTourKey}&numOfRows=30&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&arrange=E&contentTypeId=${typeId}`;
+      try {
+        const res = await fetch(url, { next: { revalidate: 60 } });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    });
+
+    const tourResults = await Promise.allSettled(tourFetchPromises);
     let rawList: any[] = [];
 
-    // primary key 방식으로 1차 시도
-    const primaryKey = candidateKeys[0];
-    for (const typeId of targetTypes) {
-      const items = await callLocationBasedList(primaryKey, typeId, mapX, mapY, radius);
-      rawList.push(...items);
-    }
-
-    // 수집 결과가 0건이고 대체 candidate key가 존재하면 1회 Retry 진행
-    if (rawList.length === 0 && candidateKeys.length > 1) {
-      const retryKey = candidateKeys[1];
-      console.warn('[API Retry] 1차 키 호출 결과가 0건이어서 대체 인코딩 키로 재시도합니다.');
-      for (const typeId of targetTypes) {
-        const items = await callLocationBasedList(retryKey, typeId, mapX, mapY, radius);
-        rawList.push(...items);
+    for (const res of tourResults) {
+      if (res.status === 'fulfilled' && res.value) {
+        const json = res.value;
+        const items =
+          json?.response?.body?.items?.item ||
+          json?.items?.item ||
+          json?.body?.items?.item;
+        const itemArr = Array.isArray(items) ? items : items ? [items] : [];
+        rawList.push(...itemArr);
       }
     }
 
-    // 수집 결과가 여전히 0건일 때 백업 데이터 리턴
     if (rawList.length === 0) {
-      console.warn('[API Notice] 공공 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
-      console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
+      console.warn('[API Notice] 한국관광공사 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
       return NextResponse.json({
         success: true,
         data: MOCK_FESTIVALS,
       });
     }
 
-    // 4. API-3 (주차장 기본정보) & API-2 (실시간 주차현황) 호출 및 조인
-    const parkingInfoParams = new URLSearchParams({
-      api_user_key_id: primaryKey,
-      page_no: '1',
-      page_size: '1000',
-    });
-
-    const parkingStatusParams = new URLSearchParams({
-      api_user_key_id: primaryKey,
-      page_no: '1',
-      page_size: '1000',
-    });
-
-    const [infoRes, statusRes] = await Promise.allSettled([
-      fetch(`${PARKING_INFO_API_URL}?${parkingInfoParams.toString()}`, { next: { revalidate: 30 } }),
-      fetch(`${PARKING_STATUS_API_URL}?${parkingStatusParams.toString()}`, { next: { revalidate: 30 } }),
-    ]);
-
+    // 2. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 (Headers 인증)
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
-    if (infoRes.status === 'fulfilled' && infoRes.value.ok) {
-      try {
-        const infoJson = await infoRes.value.json();
-        const rawInfo = infoJson?.data || infoJson?.items || infoJson?.response?.body?.items?.item;
-        parkingInfoList = Array.isArray(rawInfo) ? rawInfo : rawInfo ? [rawInfo] : [];
-      } catch (e) {
-        console.error('[API Error] Parking Info JSON 파싱 예외:', e);
-      }
-    }
+    if (parkingApiKey) {
+      const [infoRes, statusRes] = await Promise.allSettled([
+        fetch(`${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000`, {
+          next: { revalidate: 30 },
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        }),
+        fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, {
+          next: { revalidate: 30 },
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        }),
+      ]);
 
-    if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
-      try {
-        const statusJson = await statusRes.value.json();
-        const rawStatus = statusJson?.data || statusJson?.items || statusJson?.response?.body?.items?.item;
-        const statusList = Array.isArray(rawStatus) ? rawStatus : rawStatus ? [rawStatus] : [];
-
-        for (const st of statusList) {
-          const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
-          if (code) {
-            parkingStatusMap.set(code, st);
-          }
+      if (infoRes.status === 'fulfilled' && infoRes.value.ok) {
+        try {
+          const infoJson = await infoRes.value.json();
+          const rawInfo = infoJson?.data || infoJson?.items || infoJson?.response?.body?.items?.item;
+          parkingInfoList = Array.isArray(rawInfo) ? rawInfo : rawInfo ? [rawInfo] : [];
+        } catch (e) {
+          console.error('[API Error] Parking Info JSON 파싱 예외:', e);
         }
-      } catch (e) {
-        console.error('[API Error] Parking Status JSON 파싱 예외:', e);
+      }
+
+      if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
+        try {
+          const statusJson = await statusRes.value.json();
+          const rawStatus = statusJson?.data || statusJson?.items || statusJson?.response?.body?.items?.item;
+          const statusList = Array.isArray(rawStatus) ? rawStatus : rawStatus ? [rawStatus] : [];
+
+          for (const st of statusList) {
+            const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
+            if (code) {
+              parkingStatusMap.set(code, st);
+            }
+          }
+        } catch (e) {
+          console.error('[API Error] Parking Status JSON 파싱 예외:', e);
+        }
       }
     }
 
-    // 주차장 데이터 매핑
+    // 주차장 데이터 통합
     const combinedParkingLots: Parking[] = [];
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
@@ -245,7 +184,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 명소/축제별 반경 1km 주차장 조인 및 혼잡도 계산
+    // 3. 축제/명소별 반경 1km 주차장 매핑 및 혼잡도 계산
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -321,7 +260,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[API Exception] /api/festivals 예외:', error);
-    console.log('[실제 수집 건수]', MOCK_FESTIVALS.length);
     return NextResponse.json({
       success: true,
       data: MOCK_FESTIVALS,
