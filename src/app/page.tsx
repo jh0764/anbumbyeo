@@ -8,21 +8,43 @@ import MainMap from '@/components/map/MainMap';
 import FestivalCarousel from '@/components/festival/FestivalCarousel';
 import FestivalBottomSheet, { BottomSheetMode } from '@/components/festival/FestivalBottomSheet';
 import { MOCK_FESTIVALS } from '@/services/mockData';
-import { Region, StatusFilterType } from '@/types';
+import { fetchFestivals } from '@/services/api';
+import { Festival, Region, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
 
 export default function Home() {
+  const [festivals, setFestivals] = useState<Festival[]>(MOCK_FESTIVALS);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedRegion, setSelectedRegion] = useState<Region>('전체');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
 
+  // 백엔드 API 연동 데이터 패칭
+  const loadFestivals = async () => {
+    setIsLoading(true);
+    try {
+      const apiData = await fetchFestivals();
+      if (apiData && apiData.length > 0) {
+        setFestivals(apiData);
+      }
+    } catch (err) {
+      console.error('Failed to load festivals API:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFestivals();
+  }, []);
+
   // LIVE / UPCOMING 축제 카운트 계산 (지역 필터 반영)
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
     const regionFiltered =
       selectedRegion === '전체'
-        ? MOCK_FESTIVALS
-        : MOCK_FESTIVALS.filter((f) => f.region === selectedRegion);
+        ? festivals
+        : festivals.filter((f) => f.region === selectedRegion);
 
     const validFestivals = regionFiltered.filter((f) => {
       const st = getFestivalStatus(f);
@@ -41,7 +63,7 @@ export default function Home() {
       upcomingCount: uCount,
       filteredFestivals: finalFiltered,
     };
-  }, [selectedRegion, selectedStatus]);
+  }, [festivals, selectedRegion, selectedStatus]);
 
   useEffect(() => {
     if (filteredFestivals.length > 0) {
@@ -55,8 +77,8 @@ export default function Home() {
   }, [filteredFestivals, selectedFestivalId]);
 
   const selectedFestival = useMemo(() => {
-    return MOCK_FESTIVALS.find((f) => f.id === selectedFestivalId) || null;
-  }, [selectedFestivalId]);
+    return festivals.find((f) => f.id === selectedFestivalId) || null;
+  }, [festivals, selectedFestivalId]);
 
   return (
     <main className="relative w-full h-screen overflow-hidden flex flex-col bg-slate-900 select-none">
