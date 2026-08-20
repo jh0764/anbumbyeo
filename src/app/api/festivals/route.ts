@@ -213,7 +213,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 통합 주차장 기본정보 API 수집
+    // 3. 통합 주차장 기본정보 수집
     const targetCodes = ['26500', '26530', '26350', '26230', '26290', '26470', '11110', '11140', '42150', '44770'];
 
     let parkingInfoList: any[] = [];
@@ -250,7 +250,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. [핵심 핀포인트 연동]: 수집된 기본정보 주차장(부산 26500... 포함)의 std_prl_cd로 실시간 API 핀포인트 1:1 파이프라인 수행
+    // 4. std_prl_cd 기반 실시간 현황 API 핀포인트 1:1 파이프라인
     const codesToFetchStatus = Array.from(seenCodes).slice(0, 100);
 
     const fetchStatusPromises = codesToFetchStatus.map(async (code) => {
@@ -270,7 +270,6 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // 일반 실시간 API 수집과 핀포인트 API 수집을 병렬 수행
     const [pinpointResults, generalStatusRes] = await Promise.allSettled([
       Promise.all(fetchStatusPromises),
       fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, {
@@ -304,7 +303,7 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 5. 주차장 객체 조인 및 1:1 파싱
+    // 5. [핵심 필터링]: 구분과 무관하게 파싱 최우선 단계에서 10면 이상 유효 주차장만 엄격 선별 (1~9면 초소형 100% 원천 제거)
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -312,15 +311,16 @@ export async function GET(request: NextRequest) {
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
-      const isPublic = isPublicParkingDiv(info);
-      const rawSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
+      // [원천 제거]: 1석/2석/3석~9석 초소형 부설/빌라 주차장(광안리슈빌DS 등) 100% 무조건 삭제
+      if (totalSpaces < 10) continue;
+
+      const isPublic = isPublicParkingDiv(info);
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
-
-      const totalSpaces = rawSpaces > 0 ? rawSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 20);
 
       let availableSpaces = totalSpaces;
       if (status) {
@@ -351,7 +351,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 6. 명소 기준 500m 및 핀포인트 주차장 매핑
+    // 6. 10면 이상 유효 주차장만 대상으로 슬롯 구성 (공영 3개 + 민영 2개)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -417,10 +417,6 @@ export async function GET(request: NextRequest) {
               distance: formatWalkingDistanceText(distM),
               priorityScore,
             };
-          })
-          .filter((p) => {
-            if (p.distanceMeters <= 300) return true;
-            return p.totalSpaces >= 10;
           });
 
         let nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 1000);
@@ -431,6 +427,7 @@ export async function GET(request: NextRequest) {
 
         nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
 
+        // 10면 이상 유효 주차장에서 공영 최대 3개 + 민영 최대 2개 슬롯 배정
         const publicParkings = nearbyList.filter((p) => p.isPublic).slice(0, 3);
         const privateParkings = nearbyList.filter((p) => !p.isPublic).slice(0, 2);
 
@@ -488,7 +485,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[핀포인트 실시간 연동 완수 건수]', sortedFestivals.length);
+    console.log('[10면 이상 필터링 & 실시간 표기 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
