@@ -88,7 +88,6 @@ export async function GET(request: NextRequest) {
     const mapY = searchParams.get('mapY') || '37.5665';
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
-    const regionParam = searchParams.get('region') || '서울·수도권';
 
     const tourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
     const parkingApiKey = process.env.PARKING_API_KEY || tourApiKey;
@@ -108,7 +107,7 @@ export async function GET(request: NextRequest) {
     const todayStr = '20260821';
     const todayNum = 20260821;
 
-    // 1. 축제(category === '축제')인 경우: searchFestival2 단일 파이프라인 호출
+    // 1. 축제(category === '축제')인 경우: searchFestival2 호출
     if (isFestival) {
       const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=${todayStr}&numOfRows=100&arrange=A`;
       try {
@@ -167,7 +166,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
+    // 3. API-2 & API-3: 5대 지자체(서울, 경기, 대전, 대구, 부산) 실시간 주차정보 & 전국 주차장 표준 데이터
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -209,7 +208,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 순수 공영주차장 정제
+    // 4. 순수 공영주차장 정제 (5대 지자체 실시간 + 외지역 표준데이터 Fallback)
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -227,17 +226,17 @@ export async function GET(request: NextRequest) {
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      let occupied = 0;
+      let availableSpaces = totalSpaces;
       if (status) {
-        occupied = parseInt(
+        const occupied = parseInt(
           status.now_park_cnt || status.sum_curr_use_park_cnt || status.cur_use_prk_cnt || '0',
           10
         );
+        availableSpaces = Math.max(0, totalSpaces - occupied);
       } else {
-        occupied = Math.floor(totalSpaces * 0.35);
+        // 5대 지자체 외 지역 Fallback: 주차면수 보존
+        availableSpaces = Math.floor(totalSpaces * 0.65);
       }
-
-      const availableSpaces = Math.max(0, totalSpaces - occupied);
 
       combinedParkingLots.push({
         id: code,
@@ -253,7 +252,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. searchFestival2 응답 필드 파싱 및 엄격 날짜 검증
+    // 5. searchFestival2 응답 필드 파싱 및 1km 공영주차장 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -274,7 +273,7 @@ export async function GET(request: NextRequest) {
           return false;
         }
 
-        // [종료 축제]: endNum < todayNum 인 축제는 100% 자동 제외
+        // [종료 축제]: endNum < todayNum 인 축제 100% 필터링 배제
         if (endNum < todayNum) {
           return false;
         }
@@ -286,7 +285,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 1km 이내 순수 공영주차장 매핑
+        // 1km 이내 공영주차장 최단거리순 상위 5개 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -331,7 +330,7 @@ export async function GET(request: NextRequest) {
           lng: festLng,
           crowdLevel,
           crowdMessage: nearbyParkingLots.length === 0
-            ? '주변 1km 내 실시간 공영주차장 없음 (대중교통 이용 권장)'
+            ? '주변 1km 내 공영주차장 정보 확인 중 (대중교통 이용 권장)'
             : crowdMessage,
           category: categoryType,
           imageUrl: f.firstimage || f.firstimage2 || undefined,
@@ -349,12 +348,12 @@ export async function GET(request: NextRequest) {
       const bIsUpcoming = bStart > todayNum;
 
       if (aIsUpcoming && bIsUpcoming) {
-        return aStart - bStart; // 개막 임박순 오름차순
+        return aStart - bStart;
       }
-      return bStart - aStart; // 진행 중 축제는 최신 개막순
+      return bStart - aStart;
     });
 
-    console.log('[searchFestival2 단일 수집 완수 건수]', sortedFestivals.length);
+    console.log('[실시간 + 표준 Fallback 수집 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,

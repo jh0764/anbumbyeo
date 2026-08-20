@@ -96,7 +96,6 @@ export default function FestivalBottomSheet({
               </>
             )}
           </button>
-          {/* 바텀시트 우측 상단 'X' 닫기 버튼 -> 전체 모드 복귀 */}
           <button
             onClick={handleClose}
             className="p-1 rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
@@ -112,19 +111,19 @@ export default function FestivalBottomSheet({
         {/* 헤더 타이틀 및 대표 뱃지 */}
         <div>
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-100">
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
               {festival.region} · {festival.categoryType || festival.category}
             </span>
 
             {!isFestival ? (
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-600 text-white flex items-center gap-1">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-600 text-white flex items-center gap-1 shrink-0">
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                 연중무휴
               </span>
             ) : status === 'LIVE' ? (
               <span
                 className={clsx(
-                  'px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1',
+                  'px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1 shrink-0',
                   getCrowdBadgeStyle(festival.crowdLevel)
                 )}
               >
@@ -132,29 +131,29 @@ export default function FestivalBottomSheet({
                 {festival.crowdLevel}
               </span>
             ) : (
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center gap-1 shrink-0">
                 <Clock className="w-3.5 h-3.5" />
                 {getDDayString(festival.startDate)}
               </span>
             )}
           </div>
 
-          <h2 className="text-xl font-extrabold text-slate-900 leading-snug">{festival.title}</h2>
+          <h2 className="text-xl font-extrabold text-slate-900 leading-snug break-keep">{festival.title}</h2>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{festival.address || festival.locationName}</span>
+            <span className="break-keep">{festival.address || festival.locationName}</span>
           </p>
         </div>
 
         {/* 인파 혼잡도 메시지 배너 */}
         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-start gap-2.5">
           <Info className="w-4 h-4 text-indigo-600 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-700 font-medium leading-relaxed">
+          <p className="text-xs text-slate-700 font-medium leading-relaxed break-keep">
             {festival.crowdMessage}
           </p>
         </div>
 
-        {/* 주차장 정보 리스트 영역 */}
+        {/* 주차장 정보 리스트 영역 (주차장명 말줄임 없이 전체 표기 & 뱃지/버튼 shrink-0) */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
@@ -166,55 +165,61 @@ export default function FestivalBottomSheet({
 
           {sortedParkingLots.length === 0 ? (
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500 font-medium">
-              반경 1km 이내에 연계된 공영주차장이 없습니다. 대중교통 이용을 권장합니다.
+              반경 1km 이내 공영주차장 정보를 확인 중입니다. 대중교통 이용을 권장합니다.
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {sortedParkingLots.map((parking) => {
-                const isFull = parking.availableSpaces === 0;
-                const isCrowded = parking.availableSpaces <= 5;
+                const isRealtime = parking.isRealtime;
+                const isFull = isRealtime && parking.availableSpaces === 0;
+                const isCrowded = isRealtime && parking.availableSpaces <= 5;
 
                 return (
                   <div
                     key={`bs-parking-${parking.id}`}
-                    className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/70 flex items-center justify-between gap-3 hover:bg-slate-100/80 transition-colors"
+                    className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/70 flex items-start justify-between gap-3 hover:bg-slate-100/80 transition-colors"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-slate-900 truncate">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-slate-900 break-keep leading-snug">
                           {parking.name}
                         </span>
                         <span className="text-[10px] text-indigo-600 font-extrabold bg-indigo-50 px-1.5 py-0.5 rounded shrink-0">
                           {parking.distance}
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-2">
-                        <span>총 {parking.totalSpaces}면</span>
-                        {parking.address && (
-                          <span className="text-slate-400 truncate">· {parking.address}</span>
-                        )}
-                      </div>
+                      {parking.address && (
+                        <div className="text-[11px] text-slate-400 mt-1 break-keep">
+                          {parking.address}
+                        </div>
+                      )}
                     </div>
 
-                    {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isFull ? (
-                        <span className="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-extrabold rounded-xl border border-red-200">
-                          만차 ({parking.availableSpaces}/{parking.totalSpaces})
-                        </span>
-                      ) : isCrowded ? (
-                        <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-extrabold rounded-xl border border-amber-200">
-                          혼잡 ({parking.availableSpaces}/{parking.totalSpaces})
-                        </span>
+                    {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 (shrink-0 고정) */}
+                    <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                      {isRealtime ? (
+                        isFull ? (
+                          <span className="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-extrabold rounded-xl border border-red-200 shrink-0">
+                            만차 (0/{parking.totalSpaces})
+                          </span>
+                        ) : isCrowded ? (
+                          <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-extrabold rounded-xl border border-amber-200 shrink-0">
+                            혼잡 ({parking.availableSpaces}/{parking.totalSpaces})
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl border border-emerald-200 shrink-0">
+                            잔여 {parking.availableSpaces}/{parking.totalSpaces}면
+                          </span>
+                        )
                       ) : (
-                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl border border-emerald-200">
-                          잔여 {parking.availableSpaces}/{parking.totalSpaces}면
+                        <span className="px-2.5 py-1 bg-slate-200/80 text-slate-700 text-xs font-bold rounded-xl border border-slate-300/60 shrink-0">
+                          총 {parking.totalSpaces}면 (현장 확인)
                         </span>
                       )}
 
                       <button
                         onClick={() => handleOpenNavi(parking.name)}
-                        className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs"
+                        className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs shrink-0"
                         title="네비 연결"
                       >
                         <Navigation className="w-3.5 h-3.5" />
