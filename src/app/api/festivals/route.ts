@@ -53,6 +53,32 @@ function cleanParkingName(name: string): string {
     .trim();
 }
 
+// 순수 공영주차장 엄격 필터링 유틸
+function isStrictPublicParking(info: any): boolean {
+  const kindName = info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '';
+  const rawName = info.prl_nm || info.prk_nm || '';
+
+  // 1. 제외 조건 1: 구분 필드가 민영 또는 부설인 경우
+  if (kindName.includes('민영') || kindName.includes('부설')) {
+    return false;
+  }
+
+  // 2. 제외 조건 2: 명칭에 사옥/타워/성당/병원 등 비공영 키워드가 포함된 경우
+  const excludeRegex = /사옥|타워|센터|스퀘어|성당|교회|병원|호텔|아파트|오피스|파이낸스|빌딩|프라자|민영|몰|마트|상가|가톨릭|신협/i;
+  if (excludeRegex.test(rawName)) {
+    return false;
+  }
+
+  // 3. 허용 조건: 구분 필드가 공영이거나 명칭에 공영/노상/노외/환승/관공서 포함
+  const allowRegex = /공영|노상|노외|환승|구청|시청|주민센터|행정복지센터|동사무소/;
+  if (kindName.includes('공영') || allowRegex.test(rawName)) {
+    return true;
+  }
+
+  // 기본적으로 키워드 검증을 거치지 않은 명칭은 안전을 위해 제외
+  return false;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -174,30 +200,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 순수 공영주차장 정제 & 실시간 잔여석 계산
+    // 3. 순수 공영주차장 엄격 필터링 & 실시간 잔여석 계산
     const combinedParkingLots: Parking[] = [];
-    const excludeKeywords = ['호텔', '아파트', '빌딩', '오피스', '마트', '상가', '병원', '교회'];
 
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
       const lng = parseFloat(info.lo_val || info.lng || '0');
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
-      const rawName = info.prl_nm || info.prk_nm || '';
-
-      // 민영/부설 키워드 필터링
-      if (excludeKeywords.some((kw) => rawName.includes(kw))) continue;
+      // 엄격한 순수 공영주차장 여부 통과 검사
+      if (!isStrictPublicParking(info)) continue;
 
       // 총 주차면수 15면 미만 (소형 충전기 등 구획 노이즈) 제외
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
       if (totalSpaces < 15) continue;
 
-      const cleanedName = cleanParkingName(rawName);
+      const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      // 점유 대수 및 실시간 잔여석 계산 (total - occupied)
       let occupied = 0;
       if (status) {
         occupied = parseInt(
@@ -205,7 +227,6 @@ export async function GET(request: NextRequest) {
           10
         );
       } else {
-        // 실시간 연동이 없는 공영주차장은 평균 30~45% 점유 가정
         occupied = Math.floor(totalSpaces * 0.35);
       }
 
@@ -225,7 +246,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 4. 축제/명소 기준 주변 1.5km 이내 실제 주차장 매핑 & 혼잡도 산출
+    // 4. 축제/명소 기준 주변 1.5km 이내 순수 공영주차장 매핑 & 혼잡도 산출 (민영 억지 채우기 없음)
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -244,7 +265,7 @@ export async function GET(request: NextRequest) {
           })
           .filter((p) => p.distanceMeters <= 1500)
           .sort((a, b) => a.distanceMeters - b.distanceMeters)
-          .slice(0, 5);
+          .slice(0, 5); // 존재 공영주차장 개수만큼만 수집
 
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(nearbyParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
