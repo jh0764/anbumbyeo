@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Festival, Parking, Region, CategoryType } from '@/types';
 import { calculateDistance, calculateRealCrowdStatus, formatWalkingDistanceText } from '@/lib/geoUtils';
 
-// Koreaconnect 공공 API 엔드포인트 URL
+// Koreaconnect 공공 API 엔드포인트 URL (명세서 정규 URL)
 const KOREACONNECT_LOCATION_API_URL =
   'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
-const KOREACONNECT_FESTIVAL_SEARCH_URL =
-  'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/searchFestival2';
 const PARKING_INFO_API_URL =
   'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
 const PARKING_STATUS_API_URL =
@@ -61,7 +59,7 @@ function cleanParkingName(name: string): string {
     .trim();
 }
 
-// 순수 공영주차장 엄격 필터링 유틸
+// 순수 공영주차장 엄격 필터링 유틸 (민영/부설/호텔/빌딩/성당 제외)
 function isStrictPublicParking(info: any): boolean {
   const kindName = info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '';
   const rawName = info.prl_nm || info.prk_nm || '';
@@ -88,7 +86,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mapX = searchParams.get('mapX') || '126.9780';
     const mapY = searchParams.get('mapY') || '37.5665';
-    const radius = searchParams.get('radius') || '15000';
+    const rawRadius = Number(searchParams.get('radius')) || 20000;
+    // 명세서 Max 20,000m 제한 준수
+    const radius = Math.min(Math.max(1000, rawRadius), 20000);
+
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
 
@@ -104,67 +105,37 @@ export async function GET(request: NextRequest) {
     }
 
     const contentTypeId = requestedContentTypeId || getContentTypeIdFromCategory(categoryParam);
-    const isFestivalCategory = categoryParam === '축제' || contentTypeId === '15';
 
+    // 1. locationBasedList2 호출 (명세서 정규 파라이터: MobileOS=ETC, MobileApp=anbumbyeo, arrange=E)
     let rawList: any[] = [];
+    const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
 
-    // 1. 축제(category === '축제') 조회 시: searchFestival2 전용 API 호출
-    if (isFestivalCategory) {
-      const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=20260101&numOfRows=100&arrange=A`;
-      try {
-        const res = await fetch(festivalSearchUrl, {
-          cache: 'no-store',
-          headers: {
-            api_user_key_id: apiKeyHeader,
-            Accept: 'application/json',
-          },
-        });
+    try {
+      const res = await fetch(locationUrl, {
+        cache: 'no-store',
+        headers: {
+          api_user_key_id: apiKeyHeader,
+          Accept: 'application/json',
+        },
+      });
 
-        if (res.ok) {
-          const rawText = await res.text();
-          try {
-            const json = JSON.parse(rawText);
-            const items =
-              json?.response?.body?.items?.item ||
-              json?.items?.item ||
-              json?.body?.items?.item ||
-              json?.data;
-            rawList = Array.isArray(items) ? items : items ? [items] : [];
-          } catch {}
-        }
-      } catch (err) {
-        console.error('[API Error] searchFestival2 호출 예외:', err);
+      if (res.ok) {
+        const rawText = await res.text();
+        try {
+          const json = JSON.parse(rawText);
+          const items =
+            json?.response?.body?.items?.item ||
+            json?.items?.item ||
+            json?.body?.items?.item ||
+            json?.data;
+          rawList = Array.isArray(items) ? items : items ? [items] : [];
+        } catch {}
       }
-    } else {
-      // 2. 공원·나들이('12') / 문화시설('14') 조회 시: locationBasedList2 호출
-      const locationUrl = `${KOREACONNECT_LOCATION_API_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&mapX=${mapX}&mapY=${mapY}&radius=${radius}&contentTypeId=${contentTypeId}&numOfRows=50&arrange=E`;
-      try {
-        const res = await fetch(locationUrl, {
-          cache: 'no-store',
-          headers: {
-            api_user_key_id: apiKeyHeader,
-            Accept: 'application/json',
-          },
-        });
-
-        if (res.ok) {
-          const rawText = await res.text();
-          try {
-            const json = JSON.parse(rawText);
-            const items =
-              json?.response?.body?.items?.item ||
-              json?.items?.item ||
-              json?.body?.items?.item ||
-              json?.data;
-            rawList = Array.isArray(items) ? items : items ? [items] : [];
-          } catch {}
-        }
-      } catch (err) {
-        console.error('[API Error] locationBasedList2 호출 예외:', err);
-      }
+    } catch (err) {
+      console.error('[API Error] locationBasedList2 호출 예외:', err);
     }
 
-    // 3. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
+    // 2. API-2 & API-3: Koreaconnect 주차장 정보 & 실시간 현황 조인
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
@@ -206,7 +177,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 순수 공영주차장 정제
+    // 3. 순수 공영주차장 필터링
     const combinedParkingLots: Parking[] = [];
 
     for (const info of parkingInfoList) {
@@ -257,24 +228,35 @@ export async function GET(request: NextRequest) {
     const day = String(now.getDate()).padStart(2, '0');
     const todayNum = Number(`${year}${month}${day}`) || 20260821;
 
-    // 4. 원본 날짜 파싱 및 1km 이내 주차장 조인
+    // 4. 원본 응답 항목 바인딩 및 날짜 파싱 & 1km 이내 공영주차장 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
         const typeIdStr = String(f.contenttypeid || f.contentTypeId || contentTypeId);
         if (typeIdStr !== '15') return true;
 
-        const rawStart = String(f.eventstartdate || f.event_start_date || '');
-        const rawEnd = String(f.eventenddate || f.event_end_date || '');
+        // 축제 날짜 파싱 (eventstartdate/eventenddate 또는 modifiedtime/생성년도 기준)
+        let rawStart = String(f.eventstartdate || f.event_start_date || '');
+        let rawEnd = String(f.eventenddate || f.event_end_date || '');
 
-        const startNum = Number(rawStart);
-        const endNum = Number(rawEnd);
-
-        if (isNaN(startNum) || isNaN(endNum) || rawStart.length < 8 || rawEnd.length < 8) {
-          return false;
+        if (!rawStart || rawStart.length < 8) {
+          const modTime = String(f.modifiedtime || f.createdtime || '');
+          if (modTime.length >= 8) {
+            rawStart = modTime.slice(0, 8);
+          } else {
+            rawStart = '20260821';
+          }
         }
 
-        // [종료된 축제 100% 필터링]: endNum < todayNum 이면 무조건 제외
+        if (!rawEnd || rawEnd.length < 8) {
+          // 기본 10일 행사로 산정
+          const startNum = Number(rawStart);
+          rawEnd = String(startNum + 10);
+        }
+
+        const endNum = Number(rawEnd);
+
+        // [종료된 과거 축제 배제]: endNum < todayNum 이면 무조건 제외
         if (endNum < todayNum) {
           return false;
         }
@@ -286,6 +268,7 @@ export async function GET(request: NextRequest) {
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
+        // 1km (1,000m) 이내 순수 공영주차장 매핑
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -305,15 +288,21 @@ export async function GET(request: NextRequest) {
         const typeIdStr = String(f.contenttypeid || f.contentTypeId || contentTypeId);
         const categoryType = getCategoryTypeFromContentTypeId(typeIdStr);
 
-        const rawStart = String(f.eventstartdate || f.event_start_date || '');
-        const rawEnd = String(f.eventenddate || f.event_end_date || '');
+        let rawStart = String(f.eventstartdate || f.event_start_date || '');
+        let rawEnd = String(f.eventenddate || f.event_end_date || '');
 
-        const startDate = rawStart.length >= 8
-          ? `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`
-          : '2026-08-21';
-        const endDate = rawEnd.length >= 8
-          ? `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`
-          : '2026-08-31';
+        if (!rawStart || rawStart.length < 8) {
+          const modTime = String(f.modifiedtime || f.createdtime || '');
+          rawStart = modTime.length >= 8 ? modTime.slice(0, 8) : '20260821';
+        }
+
+        if (!rawEnd || rawEnd.length < 8) {
+          const startNum = Number(rawStart);
+          rawEnd = String(startNum + 10);
+        }
+
+        const startDate = `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`;
+        const endDate = `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`;
 
         const period = categoryType === '축제'
           ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}`
@@ -342,7 +331,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    console.log('[실제 수집 건수]', resultFestivals.length);
+    console.log('[locationBasedList2 수집 건수]', resultFestivals.length);
 
     return NextResponse.json({
       success: true,
