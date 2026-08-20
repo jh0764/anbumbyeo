@@ -10,7 +10,7 @@ import { Plus, Minus } from 'lucide-react';
 interface LeafletMapInnerProps {
   festivals: Festival[];
   selectedFestivalId: string | null;
-  onSelectFestival: (id: string) => void;
+  onSelectFestival: (id: string | null) => void;
 }
 
 // 1. Leaflet Custom Icon 생성 함수
@@ -19,7 +19,7 @@ function createFestivalIcon(festival: Festival, isSelected: boolean) {
 
   let colorClass = 'bg-emerald-600 border-emerald-400';
   if (isSelected) {
-    colorClass = 'bg-indigo-600 border-yellow-300 scale-125 z-[1000]';
+    colorClass = 'bg-indigo-600 border-yellow-300 ring-4 ring-indigo-400/40 scale-125 z-[1000] animate-bounce';
   } else if (festival.crowdLevel === '매우 혼잡') {
     colorClass = 'bg-red-600 border-red-300';
   } else if (festival.crowdLevel === '혼잡') {
@@ -30,10 +30,10 @@ function createFestivalIcon(festival: Festival, isSelected: boolean) {
 
   const iconHtml = `
     <div class="relative group cursor-pointer flex flex-col items-center">
-      <div class="w-8 h-8 rounded-full ${colorClass} text-white flex items-center justify-center font-bold text-xs shadow-md border-2 transition-transform duration-200 hover:scale-110">
+      <div class="w-9 h-9 rounded-full ${colorClass} text-white flex items-center justify-center font-bold text-sm shadow-lg border-2 transition-transform duration-200 hover:scale-110">
         ${isFestival ? '🎉' : '🌳'}
       </div>
-      <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md border border-slate-700/50 max-w-[120px] truncate ${isSelected ? 'opacity-100 z-10' : 'opacity-80 group-hover:opacity-100'}">
+      <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900/90 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-md border border-slate-700/50 max-w-[130px] truncate ${isSelected ? 'opacity-100 z-10 font-extrabold text-amber-300' : 'opacity-85 group-hover:opacity-100'}">
         ${festival.title}
       </div>
     </div>
@@ -42,8 +42,8 @@ function createFestivalIcon(festival: Festival, isSelected: boolean) {
   return L.divIcon({
     html: iconHtml,
     className: 'bg-transparent border-0 outline-none shadow-none',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
   });
 }
 
@@ -60,7 +60,7 @@ function createParkingIcon(parking: Parking) {
 
   const iconHtml = `
     <div class="relative flex flex-col items-center">
-      <div class="w-6 h-6 rounded-full ${colorClass} text-white flex items-center justify-center font-bold text-[10px] shadow-sm border shrink-0">
+      <div class="w-7 h-7 rounded-full ${colorClass} text-white flex items-center justify-center font-extrabold text-xs shadow-md border shrink-0">
         P
       </div>
       <div class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-800 text-[9px] font-extrabold px-1.5 py-0.2 rounded border border-slate-200 shadow-2xs">
@@ -72,30 +72,51 @@ function createParkingIcon(parking: Parking) {
   return L.divIcon({
     html: iconHtml,
     className: 'bg-transparent border-0 outline-none shadow-none',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
-// 2. 단방향 카메라 컨트롤러 (Jittering 방지 및 flyTo 이동)
-function MapController({ center }: { center: [number, number] }) {
+// 2. Focus Mode 시 선택 축제 + 주차장 좌표 FitBounds 카메라 조정
+function FocusCameraController({
+  selectedFestival,
+  parkingLots,
+}: {
+  selectedFestival: Festival | null;
+  parkingLots: Parking[];
+}) {
   const map = useMap();
-  const prevCenterRef = useRef<[number, number] | null>(null);
+  const prevIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!center || isNaN(center[0]) || isNaN(center[1])) return;
-    if (
-      !prevCenterRef.current ||
-      prevCenterRef.current[0] !== center[0] ||
-      prevCenterRef.current[1] !== center[1]
-    ) {
-      prevCenterRef.current = center;
-      map.flyTo(center, 14, {
-        animate: true,
-        duration: 0.8,
-      });
+    if (!selectedFestival) {
+      prevIdRef.current = null;
+      return;
     }
-  }, [center, map]);
+
+    if (prevIdRef.current !== selectedFestival.id) {
+      prevIdRef.current = selectedFestival.id;
+
+      const points: [number, number][] = [[selectedFestival.lat, selectedFestival.lng]];
+      for (const p of parkingLots) {
+        if (!isNaN(p.lat) && !isNaN(p.lng)) {
+          points.push([p.lat, p.lng]);
+        }
+      }
+
+      if (points.length === 1) {
+        map.flyTo(points[0], 15, { animate: true, duration: 0.8 });
+      } else {
+        const bounds = L.latLngBounds(points);
+        map.fitBounds(bounds, {
+          padding: [60, 60],
+          maxZoom: 15,
+          animate: true,
+          duration: 0.8,
+        });
+      }
+    }
+  }, [selectedFestival, parkingLots, map]);
 
   return null;
 }
@@ -109,7 +130,7 @@ function CustomMapControls({ onResetCenter }: { onResetCenter: () => void }) {
       <button
         onClick={onResetCenter}
         className="w-9 h-9 bg-white/95 backdrop-blur-md rounded-full shadow-md border border-slate-200/80 flex items-center justify-center text-slate-700 hover:bg-slate-50 transition-colors font-bold text-xs"
-        title="선택 위치 재정렬"
+        title="전체 축제 지도 보기"
       >
         N
       </button>
@@ -151,7 +172,8 @@ export default function LeafletMapInner({
   }, [festivals]);
 
   const selectedFestival = useMemo(() => {
-    return uniqueFestivals.find((f) => f.id === selectedFestivalId) || uniqueFestivals[0] || null;
+    if (!selectedFestivalId) return null;
+    return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
   const centerCoordinates = useMemo<[number, number]>(() => {
@@ -161,7 +183,7 @@ export default function LeafletMapInner({
     return [37.5665, 126.9780];
   }, [selectedFestival]);
 
-  // 선택된 축제의 주변 반경 1.5km 이내 주차장 상위 5개만 노출
+  // Focus Mode: 선택된 축제의 주변 반경 1.5km 주차장 상위 5개
   const displayParkingLots = useMemo(() => {
     if (!selectedFestival || !selectedFestival.parkingLots) return [];
 
@@ -192,55 +214,62 @@ export default function LeafletMapInner({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <MapController center={centerCoordinates} />
+        <FocusCameraController
+          selectedFestival={selectedFestival}
+          parkingLots={displayParkingLots}
+        />
 
-        {/* 1. 축제/명소 마커 렌더링 */}
-        {uniqueFestivals.map((fest, idx) => {
-          const isSelected = fest.id === selectedFestivalId;
-          const markerKey = `fest-${fest.id || 'fest'}-${idx}`;
-
-          return (
+        {/* 1. 마커 조건부 렌더링:
+            - Focus Mode (selectedFestivalId 존재): 선택된 축제 1개만 노출
+            - Overall Mode (selectedFestivalId null): 전체 축제 마커 노출 */}
+        {selectedFestival ? (
+          <Marker
+            key={`fest-focus-${selectedFestival.id}`}
+            position={[selectedFestival.lat, selectedFestival.lng]}
+            icon={createFestivalIcon(selectedFestival, true)}
+          />
+        ) : (
+          uniqueFestivals.map((fest, idx) => (
             <Marker
-              key={markerKey}
+              key={`fest-all-${fest.id}-${idx}`}
               position={[fest.lat, fest.lng]}
-              icon={createFestivalIcon(fest, isSelected)}
+              icon={createFestivalIcon(fest, false)}
               eventHandlers={{
                 click: () => onSelectFestival(fest.id),
               }}
             />
-          );
-        })}
+          ))
+        )}
 
-        {/* 2. 선택된 축제의 주변 주차장 마커 렌더링 (고유 key: parking-${parking.id}-${idx}) */}
-        {displayParkingLots.map((parking, idx) => {
-          const parkingKey = `parking-${parking.id || 'prk'}-${idx}`;
+        {/* 2. 주차장 마커 렌더링 (Focus Mode에서만 연계 5개 표시) */}
+        {selectedFestival &&
+          displayParkingLots.map((parking, idx) => {
+            const parkingKey = `parking-${parking.id || 'prk'}-${idx}`;
 
-          return (
-            <Marker
-              key={parkingKey}
-              position={[parking.lat, parking.lng]}
-              icon={createParkingIcon(parking)}
-            >
-              <Popup className="custom-popup">
-                <div className="p-1 text-xs">
-                  <div className="font-bold text-slate-900">{parking.name}</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">
-                    잔여: <span className="font-bold text-emerald-600">{parking.availableSpaces}면</span> / 총 {parking.totalSpaces}면
+            return (
+              <Marker
+                key={parkingKey}
+                position={[parking.lat, parking.lng]}
+                icon={createParkingIcon(parking)}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-1 text-xs">
+                    <div className="font-bold text-slate-900">{parking.name}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      잔여: <span className="font-bold text-emerald-600">{parking.availableSpaces}면</span> / 총 {parking.totalSpaces}면
+                    </div>
+                    {parking.address && (
+                      <div className="text-[9px] text-slate-400 mt-0.5 truncate">{parking.address}</div>
+                    )}
                   </div>
-                  {parking.address && (
-                    <div className="text-[9px] text-slate-400 mt-0.5 truncate">{parking.address}</div>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          );
-        })}
+                </Popup>
+              </Marker>
+            );
+          })}
 
         <CustomMapControls
           onResetCenter={() => {
-            if (selectedFestival) {
-              onSelectFestival(selectedFestival.id);
-            }
+            onSelectFestival(null);
           }}
         />
       </MapContainer>

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { Festival, Parking } from '@/types';
+import { Festival } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
 import {
   X,
@@ -15,9 +14,6 @@ import {
   Sparkles,
   Info,
   Clock,
-  Phone,
-  AlertCircle,
-  ExternalLink,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -27,12 +23,14 @@ interface FestivalBottomSheetProps {
   festival: Festival | null;
   mode: BottomSheetMode;
   onModeChange: (mode: BottomSheetMode) => void;
+  onClose: () => void;
 }
 
 export default function FestivalBottomSheet({
   festival,
   mode,
   onModeChange,
+  onClose,
 }: FestivalBottomSheetProps) {
   if (!festival || mode === 'collapsed') {
     return null;
@@ -57,6 +55,11 @@ export default function FestivalBottomSheet({
   const handleOpenNavi = (parkingName: string) => {
     const query = encodeURIComponent(parkingName);
     window.open(`https://map.kakao.com/link/search/${query}`, '_blank');
+  };
+
+  const handleClose = () => {
+    onModeChange('collapsed');
+    onClose();
   };
 
   const sortedParkingLots = [...festival.parkingLots].sort(
@@ -93,9 +96,11 @@ export default function FestivalBottomSheet({
               </>
             )}
           </button>
+          {/* 바텀시트 우측 상단 'X' 닫기 버튼 -> 전체 모드 복귀 */}
           <button
-            onClick={() => onModeChange('collapsed')}
+            onClick={handleClose}
             className="p-1 rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+            title="축제 포커스 취소 및 전체 지도 보기"
           >
             <X className="w-5 h-5" />
           </button>

@@ -28,7 +28,6 @@ export default function Home() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedRegion, setSelectedRegion] = useState<Region>('전체');
-  // 기본 선택(default) 카테고리: [🎉 축제]
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('축제');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('LIVE');
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
@@ -57,7 +56,7 @@ export default function Home() {
     }
   }, []);
 
-  // 카테고리 또는 권역 변경 시 백엔드 재호출
+  // 카테고리 또는 권역 변경 시 백엔드 재호출 및 포커스 초기화
   useEffect(() => {
     loadFestivals(selectedCategory, selectedRegion);
   }, [selectedCategory, selectedRegion, loadFestivals]);
@@ -102,7 +101,7 @@ export default function Home() {
     return filteredFestivals.slice(0, 15);
   }, [filteredFestivals]);
 
-  // 진행 중 축제가 0건이고 '축제' 카테고리일 때만 UPCOMING 자동 전환
+  // 진행 중 축제가 0건이고 '축제' 카테고일 때만 UPCOMING 자동 전환
   useEffect(() => {
     if (!isLoading && festivals.length > 0 && selectedCategory === '축제') {
       if (liveCount === 0 && upcomingCount > 0 && selectedStatus === 'LIVE') {
@@ -116,19 +115,8 @@ export default function Home() {
     }
   }, [isLoading, festivals.length, liveCount, upcomingCount, selectedStatus, selectedCategory, autoSwitchedToUpcoming]);
 
-  // 필터 변경 시 첫 항목 자동 선택
-  useEffect(() => {
-    if (displayFestivals.length > 0) {
-      const exists = displayFestivals.some((f) => f.id === selectedFestivalId);
-      if (!exists) {
-        setSelectedFestivalId(displayFestivals[0].id);
-      }
-    } else {
-      setSelectedFestivalId(null);
-    }
-  }, [displayFestivals, selectedFestivalId]);
-
   const selectedFestival = useMemo(() => {
+    if (!selectedFestivalId) return null;
     return festivals.find((f) => f.id === selectedFestivalId) || null;
   }, [festivals, selectedFestivalId]);
 
@@ -141,6 +129,7 @@ export default function Home() {
           selectedRegion={selectedRegion}
           onSelectRegion={(reg) => {
             setSelectedRegion(reg);
+            setSelectedFestivalId(null);
             setAutoSwitchedToUpcoming(false);
           }}
         />
@@ -148,6 +137,7 @@ export default function Home() {
           selectedCategory={selectedCategory}
           onSelectCategory={(cat) => {
             setSelectedCategory(cat);
+            setSelectedFestivalId(null);
             setAutoSwitchedToUpcoming(false);
           }}
         />
@@ -158,6 +148,7 @@ export default function Home() {
             selectedStatus={selectedStatus}
             onSelectStatus={(st) => {
               setSelectedStatus(st);
+              setSelectedFestivalId(null);
               setAutoSwitchedToUpcoming(false);
             }}
             liveCount={liveCount}
@@ -193,17 +184,17 @@ export default function Home() {
           <MainMap
             festivals={displayFestivals}
             selectedFestivalId={selectedFestivalId}
-            onSelectFestival={setSelectedFestivalId}
+            onSelectFestival={(id) => setSelectedFestivalId(id)}
           />
         )}
 
-        {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 */}
+        {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 (바텀시트가 접혀있거나 선택되지 않았을 때) */}
         {!isLoading && bottomSheetMode === 'collapsed' && (
           <div className="absolute bottom-4 left-0 right-0 z-10">
             <FestivalCarousel
               festivals={displayFestivals}
               selectedFestivalId={selectedFestivalId}
-              onSelectFestival={setSelectedFestivalId}
+              onSelectFestival={(id) => setSelectedFestivalId(id)}
               onOpenDetail={() => setBottomSheetMode('half')}
             />
           </div>
@@ -216,6 +207,7 @@ export default function Home() {
           festival={selectedFestival}
           mode={bottomSheetMode}
           onModeChange={setBottomSheetMode}
+          onClose={() => setSelectedFestivalId(null)}
         />
       )}
     </main>
