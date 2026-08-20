@@ -92,7 +92,6 @@ function parseFeeInfoFromApi(info: any, isPublic: boolean): string {
   const rawName = String(info.prl_nm || info.prk_nm || '');
   const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || '');
 
-  // 벡스코 대형 전시장 실제 주차 요금 특별 연동
   if (rawName.includes('벡스코') || rawName.includes('BEXCO') || rawAddr.includes('APEC로')) {
     return '10분당 400원 (최초 30분 1,200원)';
   }
@@ -221,7 +220,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 해운대구(26350), 벡스코, 수영구(26500) 등 주차장 기본정보 수집
+    // 3. 통합 주차장 기본정보 수집
     const targetCodes = ['26350', '26500', '26530', '26230', '26290', '26470', '11110', '11140', '42150', '44770'];
 
     let parkingInfoList: any[] = [];
@@ -311,8 +310,8 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 5. 전기차 전용 1~5면 데이터 배제 및 대형 전시장 부설 주차장 파싱
-    const combinedParkingLots: Parking[] = [];
+    // 5. [시설별 그룹화 & 일반 대형 면수 레코드 최우선 바인딩]
+    const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
@@ -323,13 +322,36 @@ export async function GET(request: NextRequest) {
       const rawSource = String(info.souc_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // [핵심 픽스]: 한국환경공단 전기차 전용 1~5면 초소형 오염 데이터 100% 원천 배제!
+      // 초소형 전기차 전용 충전 레코드(5면 이하, 한국환경공단)는 그룹 내에서 무시
       const isEVOnlyStation =
         (rawSource.includes('한국환경공단') || rawName.includes('충전기') || rawName.includes('충전소')) &&
         totalSpaces <= 5;
       if (isEVOnlyStation) continue;
 
       const cleanedName = cleanParkingName(rawName);
+      const groupKey = cleanedName.includes('벡스코') || cleanedName.includes('BEXCO')
+        ? '벡스코_GROUP'
+        : (info.std_prl_cd || info.std_prk_mg_no || cleanedName);
+
+      const existing = facilityGroupMap.get(groupKey);
+      if (!existing) {
+        facilityGroupMap.set(groupKey, info);
+      } else {
+        const existingSpaces = parseInt(existing.sum_park_cnt || existing.gnr_park_cnt || '0', 10);
+        if (totalSpaces > existingSpaces) {
+          facilityGroupMap.set(groupKey, info);
+        }
+      }
+    }
+
+    const combinedParkingLots: Parking[] = [];
+
+    for (const info of Array.from(facilityGroupMap.values())) {
+      const lat = parseFloat(info.la_val || info.lat || '0');
+      const lng = parseFloat(info.lo_val || info.lng || '0');
+      const rawName = String(info.prl_nm || info.prk_nm || '');
+      const cleanedName = cleanParkingName(rawName);
+      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
       const isDirectVenueParking =
         cleanedName.includes('벡스코') ||
@@ -346,7 +368,7 @@ export async function GET(request: NextRequest) {
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      // 벡스코 대형 주차장은 2,400면 수동 보정
+      // 벡스코 본관/신관 대형 부설 주차장 (2,400면 규모)
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? 2400
         : (totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 500));
@@ -366,21 +388,21 @@ export async function GET(request: NextRequest) {
 
       combinedParkingLots.push({
         id: code,
-        name: cleanedName,
+        name: (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO')) ? '벡스코 제1·2전시장 주차장' : cleanedName,
         lat,
         lng,
         totalSpaces: finalTotalSpaces,
         availableSpaces,
         distance: '',
         distanceMeters: 0,
-        address: info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '',
+        address: (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO')) ? '부산광역시 해운대구 APEC로 55' : (info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || ''),
         isRealtime,
         isPublic,
         feeInfo,
       });
     }
 
-    // 6. 벡스코 등 행사장 자체 부설 주차장 최상단(1순위) 고정 정렬
+    // 6. 벡스코 축제 및 대형 전시장 직속 주차장 1순위 최우선 고정 정렬
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -521,7 +543,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[전기차 오염 배제 및 벡스코 요금/면수 정상화 완수 건수]', sortedFestivals.length);
+    console.log('[동일 시설 그룹화 & 대형 일반 주차장 최우선 바인딩 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
