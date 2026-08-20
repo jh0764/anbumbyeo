@@ -13,6 +13,17 @@ import { Festival, Region, CategoryType, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
 import { Info } from 'lucide-react';
 
+// 권역별 대표 좌표 상수
+const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
+  전체: { mapX: '126.9780', mapY: '37.5665' },
+  '서울·수도권': { mapX: '126.9780', mapY: '37.5665' },
+  강원: { mapX: '128.8760', mapY: '37.7519' },
+  충청: { mapX: '127.3845', mapY: '36.3504' },
+  전라: { mapX: '126.9056', mapY: '35.1595' },
+  경상: { mapX: '129.0756', mapY: '35.1796' },
+  제주: { mapX: '126.5312', mapY: '33.4996' },
+};
+
 export default function Home() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -23,11 +34,18 @@ export default function Home() {
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 백엔드 API 호출 및 실데이터 수집 함수
-  const loadFestivals = useCallback(async (cat: CategoryType) => {
+  // 백엔드 API 호출 및 실데이터 수집 함수 (권역별 mapX, mapY 좌표 반영)
+  const loadFestivals = useCallback(async (cat: CategoryType, reg: Region) => {
     setIsLoading(true);
     try {
-      const data = await fetchFestivals({ category: cat });
+      const coords = REGION_COORDINATES[reg] || REGION_COORDINATES['전체'];
+      const data = await fetchFestivals({
+        category: cat,
+        mapX: parseFloat(coords.mapX),
+        mapY: parseFloat(coords.mapY),
+        radius: 30000,
+      });
+
       if (data && Array.isArray(data)) {
         setFestivals(data);
       }
@@ -38,10 +56,10 @@ export default function Home() {
     }
   }, []);
 
-  // 카테고리 변경 시 데이터 패칭 (고정된 deps: [selectedCategory, loadFestivals])
+  // 카테고리 또는 권역 변경 시 백엔드 재호출
   useEffect(() => {
-    loadFestivals(selectedCategory);
-  }, [selectedCategory, loadFestivals]);
+    loadFestivals(selectedCategory, selectedRegion);
+  }, [selectedCategory, selectedRegion, loadFestivals]);
 
   // 권역 -> 카테고리 -> 상태 순 필터링
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
@@ -98,7 +116,7 @@ export default function Home() {
     }
   }, [isLoading, festivals.length, liveCount, upcomingCount, selectedStatus, selectedCategory, autoSwitchedToUpcoming]);
 
-  // 필터 변경 시 첫 항목 자동 선택 (고정된 deps: [filteredFestivals, selectedFestivalId])
+  // 필터 변경 시 첫 항목 자동 선택
   useEffect(() => {
     if (filteredFestivals.length > 0) {
       const exists = filteredFestivals.some((f) => f.id === selectedFestivalId);
