@@ -25,6 +25,19 @@ export function calculateDistance(
   return Math.round(R * c);
 }
 
+// 도보 소요 시간 계산식 (분당 67m 기준, 1km = 약 15분)
+export function calculateWalkingMinutes(distanceMeters: number): number {
+  if (!distanceMeters || distanceMeters <= 0) return 1;
+  return Math.ceil(distanceMeters / 67);
+}
+
+// 도보 시간 및 거리 텍스트 표준화 유틸 (예: "도보 4분 (250m)")
+export function formatWalkingDistanceText(distanceMeters: number): string {
+  const mins = calculateWalkingMinutes(distanceMeters);
+  const distText = distanceMeters < 1000 ? `${distanceMeters}m` : `${(distanceMeters / 1000).toFixed(1)}km`;
+  return `도보 ${mins}분 (${distText})`;
+}
+
 // 실제 매핑된 주변 주차장들의 잔여율 기반 실시간 혼잡도 산출
 export function calculateRealCrowdStatus(
   parkingLots: { totalSpaces: number; availableSpaces: number }[]
@@ -32,7 +45,7 @@ export function calculateRealCrowdStatus(
   if (!parkingLots || parkingLots.length === 0) {
     return {
       crowdLevel: '보통',
-      crowdMessage: '주변 1.5km 내 실시간 공영주차장 정보 없음 (대중교통 이용 권장)',
+      crowdMessage: '주변 1km 내 실시간 공영주차장 정보 없음 (대중교통 이용 권장)',
     };
   }
 

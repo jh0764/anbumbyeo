@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Festival, Parking, Region, CategoryType } from '@/types';
-import { calculateDistance, calculateRealCrowdStatus } from '@/lib/geoUtils';
+import { calculateDistance, calculateRealCrowdStatus, formatWalkingDistanceText } from '@/lib/geoUtils';
 import { MOCK_FESTIVALS } from '@/services/mockData';
 
-// Koreaconnect 공공 API 엔드포인트 URL (정규 URL)
+// Koreaconnect 공공 API 엔드포인트 URL
 const KOREACONNECT_LOCATION_API_URL =
   'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/locationBasedList2';
 const KOREACONNECT_FESTIVAL_SEARCH_URL =
@@ -104,8 +104,8 @@ export async function GET(request: NextRequest) {
     const isFestivalCategory = categoryParam === '축제' || requestedContentTypeId === '15';
 
     if (isFestivalCategory) {
-      // searchFestival2 전용 API 호출 (실제 시작일/종료일 제공)
-      const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=20260101&numOfRows=50&arrange=A`;
+      // searchFestival2 정규 API 호출 (numOfRows=100, eventStartDate=20260801)
+      const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=20260801&numOfRows=100&arrange=A`;
       try {
         const res = await fetch(festivalSearchUrl, {
           cache: 'no-store',
@@ -276,27 +276,55 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const todayStr = '2026-08-20'; // 오늘 날짜 기준 (2026년 8월 20일)
+    // 현재 기준 오늘 날짜 (YYYYMMDD 정수형: 20260821)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayNum = Number(`${year}${month}${day}`) || 20260821;
 
-    // 4. 축제/명소 매핑 & 실제 날짜 파싱 및 700m (도보 10분) 이내 주차장 정제
+    // 4. 원본 날짜 엄격 파싱 & 1km 도보 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
+      .filter((f: any) => {
+        const contentTypeIdStr = String(f.contenttypeid || f.contentTypeId || '12');
+        if (contentTypeIdStr !== '15') return true; // 공원/문화시설은 상시
+
+        // 축제인 경우 원본 eventstartdate, eventenddate 엄격 파싱
+        const rawStart = String(f.eventstartdate || f.event_start_date || '');
+        const rawEnd = String(f.eventenddate || f.event_end_date || '');
+
+        const startNum = Number(rawStart);
+        const endNum = Number(rawEnd);
+
+        // 유효하지 않은 날짜인 경우 제외
+        if (isNaN(startNum) || isNaN(endNum) || rawStart.length < 8 || rawEnd.length < 8) {
+          return false;
+        }
+
+        // [과거 종료 축제 배제]: endNum < todayNum 은 무조건 100% 필터링!
+        if (endNum < todayNum) {
+          return false;
+        }
+
+        return true;
+      })
       .map((f: any, idx: number) => {
         const festLat = parseFloat(f.mapy);
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
 
-        // 실제 반경 700m (도보 10분 이내) 주차장만 매핑
+        // 축제 위치 기준 1,000m (1km) 이내의 순수 공영주차장만 최단거리순 상위 5개 노출
         const nearbyParkingLots: Parking[] = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
             return {
               ...p,
               distanceMeters: distM,
-              distance: distM < 1000 ? `${distM}m` : `${(distM / 1000).toFixed(1)}km`,
+              distance: formatWalkingDistanceText(distM), // "도보 N분 (OOm)"
             };
           })
-          .filter((p) => p.distanceMeters <= 700)
+          .filter((p) => p.distanceMeters <= 1000)
           .sort((a, b) => a.distanceMeters - b.distanceMeters)
           .slice(0, 5);
 
@@ -306,16 +334,16 @@ export async function GET(request: NextRequest) {
         const contentTypeIdStr = String(f.contenttypeid || f.contentTypeId || '12');
         const categoryType = getCategoryTypeFromContentTypeId(contentTypeIdStr);
 
-        // 실제 시작일 및 종료일 파싱
+        // 더미 강제 변조 주입 없이 원본 8자리 파싱 사용
         const rawStart = String(f.eventstartdate || f.event_start_date || '');
         const rawEnd = String(f.eventenddate || f.event_end_date || '');
 
         const startDate = rawStart.length >= 8
           ? `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`
-          : '2026-08-15';
+          : '2026-08-21';
         const endDate = rawEnd.length >= 8
           ? `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`
-          : '2026-08-25';
+          : '2026-08-31';
 
         const period = categoryType === '축제'
           ? `${startDate.replace(/-/g, '.')} ~ ${endDate.replace(/-/g, '.')}`
@@ -336,17 +364,12 @@ export async function GET(request: NextRequest) {
           lng: festLng,
           crowdLevel,
           crowdMessage: nearbyParkingLots.length === 0
-            ? '도보 10분(700m) 내 실시간 공영주차장 없음 (대중교통 이용 권장)'
+            ? '주변 1km 내 실시간 공영주차장 없음 (대중교통 이용 권장)'
             : crowdMessage,
           category: categoryType,
           imageUrl: f.firstimage || f.firstimage2 || undefined,
           parkingLots: nearbyParkingLots,
         };
-      })
-      // 축제인 경우 이미 종료된 축제(endDate < 오늘)는 목록에서 제외
-      .filter((f) => {
-        if (f.categoryType !== '축제') return true;
-        return f.endDate >= todayStr;
       });
 
     const finalData = resultFestivals.length > 0 ? resultFestivals : MOCK_FESTIVALS;

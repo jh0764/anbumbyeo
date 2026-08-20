@@ -150,7 +150,9 @@ export default function FestivalCarousel({
                       <Car className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[10px] text-slate-400 leading-none">최단거리 주차장</div>
+                      <div className="text-[10px] text-slate-400 leading-none truncate">
+                        최단거리 · {nearestParking?.distance || '1km 내'}
+                      </div>
                       {!isFestival || status === 'LIVE' ? (
                         nearestParking ? (
                           <div className="text-xs font-bold text-indigo-900 mt-0.5 flex items-center gap-1 truncate">
@@ -164,13 +166,13 @@ export default function FestivalCarousel({
                             )}
                           </div>
                         ) : (
-                          <div className="text-xs font-medium text-slate-400 mt-0.5">정보 없음</div>
+                          <div className="text-xs font-medium text-slate-400 mt-0.5">1km 내 주차장 없음</div>
                         )
                       ) : (
                         <div className="text-[10px] font-bold text-indigo-900 mt-0.5 truncate">
                           총 {nearestParking?.totalSpaces ?? 100}면 주차 가능{' '}
                           <span className="text-[9px] text-indigo-600 font-normal">
-                            (개막일 00시부터 연동)
+                            (개막일 연동)
                           </span>
                         </div>
                       )}
@@ -195,7 +197,7 @@ export default function FestivalCarousel({
                   <div className="p-1.5 bg-amber-50 rounded-lg border border-amber-200/80 flex items-center gap-1.5 text-[10px] text-amber-900 font-medium">
                     <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span className="truncate">
-                      <strong>차선책:</strong> 도보 {Math.ceil(alternativeParking.distanceMeters / 60)}분{' '}
+                      <strong>차선책:</strong> {alternativeParking.distance}{' '}
                       <span className="font-bold">{alternativeParking.name}</span> (잔여 {alternativeParking.availableSpaces}면)
                     </span>
                   </div>
