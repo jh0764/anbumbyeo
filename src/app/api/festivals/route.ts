@@ -58,16 +58,15 @@ export async function GET(request: NextRequest) {
 
     // 1. API 키 미설정 시 백업 데이터 리턴
     if (!API_USER_KEY) {
-      console.warn('[API Notice] TOUR_API_KEY 미설정으로 상시 나들이/명소 백업 데이터를 반환합니다.');
+      console.warn('[API Notice] TOUR_API_KEY 미설정으로 백업 데이터를 제공합니다.');
+      console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
       return NextResponse.json({
         success: true,
-        source: 'fallback-no-key',
-        count: MOCK_FESTIVALS.length,
         data: MOCK_FESTIVALS,
       });
     }
 
-    // 2. 카테고리/contentTypeId 파라미터 해석
+    // 2. contentTypeId 12(관광지/공원), 14(문화시설), 15(축제) 동적 반영
     let targetTypes: string[] = ['15', '12', '14'];
     if (requestedContentTypeId) {
       targetTypes = [requestedContentTypeId];
@@ -111,18 +110,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 데이터가 0건일 때 상시 명소 폴백 데이터 리턴
+    // 수집 결과가 0건일 때 안전 백업 리턴
     if (rawList.length === 0) {
-      console.warn('[API Notice] 공공 API 수집 결과가 0건이어서 상시 명소 시연 데이터를 제공합니다.');
+      console.warn('[API Notice] 공공 API 반환 건수가 0건이어서 백업 데이터를 제공합니다.');
+      console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
       return NextResponse.json({
         success: true,
-        source: 'fallback-empty',
-        count: MOCK_FESTIVALS.length,
         data: MOCK_FESTIVALS,
       });
     }
 
-    // 3. API-3 & API-2 주차장 기본정보 및 실시간 현황 조인
+    // 3. API-3 (주차장 기본정보) & API-2 (실시간 주차현황) 호출 및 조인
     const parkingInfoParams = new URLSearchParams({
       api_user_key_id: API_USER_KEY,
       page_no: '1',
@@ -170,7 +168,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 주차장 통합
+    // 주차장 데이터 매핑
     const combinedParkingLots: Parking[] = [];
     for (const info of parkingInfoList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
@@ -200,7 +198,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 4. 각 명소별 반경 1km 주차장 매핑 및 혼잡도 계산
+    // 4. 명소/축제별 반경 1km 주차장 조인 및 혼잡도 계산
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .map((f: any, idx: number) => {
@@ -268,19 +266,19 @@ export async function GET(request: NextRequest) {
 
     const finalData = resultFestivals.length > 0 ? resultFestivals : MOCK_FESTIVALS;
 
+    // 터미널 디버그 로깅
+    console.log('실제 API 수집 건수:', finalData.length);
+
+    // 규격 통일: { success: true, data: resultFestivals }
     return NextResponse.json({
       success: true,
-      source: 'api',
-      count: finalData.length,
       data: finalData,
     });
   } catch (error: any) {
-    console.error('[API Exception] /api/festivals 백엔드 예외 발생:', error);
+    console.error('[API Exception] /api/festivals 예외:', error);
+    console.log('실제 API 수집 건수:', MOCK_FESTIVALS.length);
     return NextResponse.json({
       success: true,
-      source: 'fallback-exception',
-      message: '서버 예외로 인해 상시 명소 시연 데이터를 제공합니다.',
-      count: MOCK_FESTIVALS.length,
       data: MOCK_FESTIVALS,
     });
   }

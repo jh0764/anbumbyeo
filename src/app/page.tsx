@@ -23,14 +23,16 @@ export default function Home() {
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
 
-  // 백엔드 API 데이터 패칭
+  // 백엔드 API 호출 및 실데이터 수집 (하드코딩 덮어쓰기)
   const loadFestivals = async () => {
     setIsLoading(true);
     try {
-      const data = await fetchFestivals();
-      setFestivals(data);
+      const data = await fetchFestivals({ category: selectedCategory });
+      if (data && data.length > 0) {
+        setFestivals(data);
+      }
     } catch (err) {
-      console.error('Failed to load festivals from API:', err);
+      console.error('Failed to load real festivals from API:', err);
     } finally {
       setIsLoading(false);
     }

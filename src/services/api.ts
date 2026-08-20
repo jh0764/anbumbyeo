@@ -4,6 +4,8 @@ interface FetchFestivalsParams {
   mapX?: number;
   mapY?: number;
   radius?: number;
+  category?: string;
+  contentTypeId?: string;
 }
 
 export async function fetchFestivals(params?: FetchFestivalsParams): Promise<Festival[]> {
@@ -12,13 +14,15 @@ export async function fetchFestivals(params?: FetchFestivalsParams): Promise<Fes
     if (params?.mapX) queryParams.set('mapX', params.mapX.toString());
     if (params?.mapY) queryParams.set('mapY', params.mapY.toString());
     if (params?.radius) queryParams.set('radius', params.radius.toString());
+    if (params?.category) queryParams.set('category', params.category);
+    if (params?.contentTypeId) queryParams.set('contentTypeId', params.contentTypeId);
 
     const res = await fetch(`/api/festivals?${queryParams.toString()}`, {
       cache: 'no-store',
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to fetch festivals: ${res.statusText}`);
+      throw new Error(`Failed to fetch festivals API - Status: ${res.status}`);
     }
 
     const json = await res.json();
@@ -28,7 +32,7 @@ export async function fetchFestivals(params?: FetchFestivalsParams): Promise<Fes
 
     return [];
   } catch (error) {
-    console.error('[Client Error] fetchFestivals failed:', error);
+    console.error('[Client Error] fetchFestivals 파싱 에러:', error);
     return [];
   }
 }
