@@ -27,35 +27,45 @@ export async function GET() {
   const targetLng = 129.1185;
 
   try {
-    // 1. 통합 주차장 기본정보 호출
-    const baseInfoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000`;
-    const baseRes = await fetch(baseInfoUrl, { headers, cache: 'no-store' });
-    const baseJson = await baseRes.json();
-    const rawList = baseJson?.data || baseJson?.response?.body?.items?.item || baseJson?.items || [];
-    const baseItems = Array.isArray(rawList) ? rawList : [rawList];
+    // 1. 부산 수영구(26500) 및 부산광역시(26) 주차장 기본정보 호출
+    const baseInfoUrlBusan = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=26500&addr_type=SIGUNGU`;
+    const baseInfoUrlSido = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=26&addr_type=SIDO`;
 
-    // 2. 실시간 주차 정보 호출
-    const liveInfoUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`;
-    const liveRes = await fetch(liveInfoUrl, { headers, cache: 'no-store' });
+    const [sigunguRes, sidoRes, liveRes] = await Promise.all([
+      fetch(baseInfoUrlBusan, { headers, cache: 'no-store' }),
+      fetch(baseInfoUrlSido, { headers, cache: 'no-store' }),
+      fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, { headers, cache: 'no-store' }),
+    ]);
+
+    const sigunguJson = await sigunguRes.json();
+    const sidoJson = await sidoRes.json();
     const liveJson = await liveRes.json();
-    const rawLiveList = liveJson?.data || liveJson?.response?.body?.items?.item || liveJson?.items || [];
-    const liveItems = Array.isArray(rawLiveList) ? rawLiveList : [rawLiveList];
+
+    const sigunguList = sigunguJson?.data || sigunguJson?.response?.body?.items?.item || sigunguJson?.items || [];
+    const sidoList = sidoJson?.data || sidoJson?.response?.body?.items?.item || sidoJson?.items || [];
+    const liveList = liveJson?.data || liveJson?.response?.body?.items?.item || liveJson?.items || [];
+
+    const baseItems = [
+      ...(Array.isArray(sigunguList) ? sigunguList : [sigunguList]),
+      ...(Array.isArray(sidoList) ? sidoList : [sidoList]),
+    ];
 
     // 실시간 Map 구축 (std_prl_cd 기준)
+    const liveItems = Array.isArray(liveList) ? liveList : [liveList];
     const liveMap = new Map();
     liveItems.forEach((item: any) => {
       const code = item.std_prl_cd || item.std_prk_mg_no || item.std_prk_cd;
       if (code) liveMap.set(code, item);
     });
 
-    // 3. 광안리 1km(1000m) 이내 필터링 & Join
+    // 2. 광안리 1km(1000m) 이내 필터링 & Join
     const nearby = baseItems
       .map((item: any) => {
         const lat = Number(item.la_val || item.lat);
         const lng = Number(item.lo_val || item.lng);
         if (!lat || !lng) return null;
         const dist = getDistance(targetLat, targetLng, lat, lng);
-        if (dist > 1000) return null;
+        if (dist > 1500) return null; // 1.5km 테스트 시도
 
         const code = item.std_prl_cd || item.std_prk_mg_no;
         const live = liveMap.get(code);
@@ -81,10 +91,10 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       apiKeyConfigured: !!apiKey,
-      baseApiStatus: baseRes.status,
-      baseTotalCount: baseItems.length,
-      liveApiStatus: liveRes.status,
-      liveTotalCount: liveItems.length,
+      sigunguApiStatus: sigunguRes.status,
+      sigunguCount: Array.isArray(sigunguList) ? sigunguList.length : 0,
+      sidoApiStatus: sidoRes.status,
+      sidoCount: Array.isArray(sidoList) ? sidoList.length : 0,
       gwanganriNearbyCount: nearby.length,
       gwanganriParkingLots: nearby,
     });

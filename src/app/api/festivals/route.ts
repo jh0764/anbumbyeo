@@ -12,6 +12,60 @@ const PARKING_INFO_API_URL =
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
+// 주요 지역 시군구 법정동 코드 매핑
+function getSigunguCodeFromAddress(address: string, lat: number, lng: number): string {
+  if (!address) return '11110'; // 기본 서울 종로구
+
+  // 부산
+  if (address.includes('수영') || address.includes('광안')) return '26500';
+  if (address.includes('해운대')) return '26350';
+  if (address.includes('부산진') || address.includes('서면')) return '26230';
+  if (address.includes('중구') && address.includes('부산')) return '26110';
+  if (address.includes('부산')) return '26500';
+
+  // 대구
+  if (address.includes('대구')) return '27110';
+  // 대전
+  if (address.includes('대전')) return '30200';
+  // 서울
+  if (address.includes('종로')) return '11110';
+  if (address.includes('중구') && address.includes('서울')) return '11140';
+  if (address.includes('마포')) return '11440';
+  if (address.includes('강남')) return '11680';
+  if (address.includes('서울')) return '11110';
+
+  // 경기/인천
+  if (address.includes('수원')) return '41110';
+  if (address.includes('구리')) return '41310';
+  if (address.includes('인천')) return '28110';
+
+  // 강원
+  if (address.includes('강릉')) return '42150';
+  if (address.includes('춘천')) return '42110';
+
+  // 충청
+  if (address.includes('서천')) return '44770';
+  if (address.includes('보령')) return '44180';
+  if (address.includes('청주')) return '43110';
+
+  // 전라
+  if (address.includes('여수')) return '46130';
+  if (address.includes('전주')) return '45111';
+  if (address.includes('광주')) return '29110';
+
+  // 경상
+  if (address.includes('경주')) return '47130';
+  if (address.includes('울산')) return '31110';
+
+  // 제주
+  if (address.includes('제주')) return '50110';
+  if (address.includes('서귀포')) return '50130';
+
+  // 좌표 기준 Fallback
+  if (lng > 129.0 && lat < 35.3) return '26500'; // 부산 수영구
+  return '11110';
+}
+
 function getRegionFromAddress(address: string, lat: number, lng: number): Region {
   if (!address) return '서울';
 
@@ -198,28 +252,53 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. API-2 & API-3: 통합 주차장 기본정보(page_size=1000) + 실시간 API 1:1 매칭
+    // 3. 지역별 시군구 코드(addr_cd) 조율하여 통합 주차장 API 다중 병렬 수집
+    const targetCenterLat = parseFloat(mapY);
+    const targetCenterLng = parseFloat(mapX);
+    const primarySigunguCode = getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng);
+
+    // 주요 시군구 코드들 (종로구 11110, 수영구 26500, 해운대구 26350, 대구중구 27110, 대전유성구 30200 등)
+    const sigunguCodesToQuery = Array.from(
+      new Set([primarySigunguCode, '26500', '26350', '11110', '11140', '42150', '44770'])
+    );
+
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
-    const [infoRes, statusRes] = await Promise.allSettled([
-      fetch(`${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000`, {
-        cache: 'no-store',
-        headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-      }),
+    const fetchParkingPromises = sigunguCodesToQuery.map(async (code) => {
+      const url = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+      try {
+        const res = await fetch(url, {
+          cache: 'no-store',
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        });
+        if (!res.ok) return [];
+        const json = await res.json();
+        const raw = json?.data || json?.response?.body?.items?.item || json?.items;
+        return Array.isArray(raw) ? raw : raw ? [raw] : [];
+      } catch {
+        return [];
+      }
+    });
+
+    const [infoResults, statusRes] = await Promise.allSettled([
+      Promise.all(fetchParkingPromises),
       fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, {
         cache: 'no-store',
         headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
       }),
     ]);
 
-    if (infoRes.status === 'fulfilled' && infoRes.value.ok) {
-      try {
-        const infoJson = await infoRes.value.json();
-        const rawInfo = infoJson?.data || infoJson?.items || infoJson?.response?.body?.items?.item;
-        parkingInfoList = Array.isArray(rawInfo) ? rawInfo : rawInfo ? [rawInfo] : [];
-      } catch (e) {
-        console.error('[API Error] Parking Info JSON 파싱 예외:', e);
+    if (infoResults.status === 'fulfilled') {
+      const seenCodes = new Set<string>();
+      for (const list of infoResults.value) {
+        for (const item of list) {
+          const code = item.std_prl_cd || item.std_prk_mg_no;
+          if (code && !seenCodes.has(code)) {
+            seenCodes.add(code);
+            parkingInfoList.push(item);
+          }
+        }
       }
     }
 
@@ -250,7 +329,6 @@ export async function GET(request: NextRequest) {
 
       const isPublic = isPublicParkingDiv(info);
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
-      if (totalSpaces < 5) continue;
 
       const cleanedName = cleanParkingName(info.prl_nm || info.prk_nm || '');
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
@@ -286,7 +364,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 각 축제 좌표 기준 1km 엄격 제한 + 공영 3개 + 민영 2개(최대 5개) 할당
+    // 5. 각 축제 좌표 기준 1km(1000m) 엄격 필터링 및 공영 3개 + 민영 2개(최대 5개) 할당
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -317,9 +395,8 @@ export async function GET(request: NextRequest) {
         const festLat = parseFloat(f.mapy);
         const festLng = parseFloat(f.mapx);
         const festAddress = f.addr1 || '';
-        const region = getRegionFromAddress(festAddress, festLat, festLng);
 
-        // 반경 1km(1000m) 이내 실제 주차장만 엄격 수집 (Haversine 거리산출)
+        // 1km(1000m) 이내 실제 주차장만 엄격 필터링
         const allNearby = combinedParkingLots
           .map((p) => {
             const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
@@ -329,18 +406,16 @@ export async function GET(request: NextRequest) {
               distance: formatWalkingDistanceText(distM),
             };
           })
-          .filter((p) => p.distanceMeters <= 1000) // 1km 초과 주차장 절대 포함 금지
+          .filter((p) => p.distanceMeters <= 1000)
           .sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-        // 1) 거리순 공영주차장 최대 3개
         const publicParkings = allNearby.filter((p) => p.isPublic).slice(0, 3);
-        // 2) 거리순 민영주차장 최대 2개
         const privateParkings = allNearby.filter((p) => !p.isPublic).slice(0, 2);
 
-        // 3) 합산 최대 5개 (유효한 수량만 반환, 가짜 데이터 주입 0%)
         const finalParkingLots: Parking[] = [...publicParkings, ...privateParkings];
-
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
+        const region = getRegionFromAddress(festAddress, festLat, festLng);
+
         const typeIdStr = String(f.contenttypeid || f.contentTypeId || contentTypeId);
         const categoryType = getCategoryTypeFromContentTypeId(typeIdStr);
 
@@ -390,6 +465,8 @@ export async function GET(request: NextRequest) {
       }
       return bStart - aStart;
     });
+
+    console.log('[시군구 addr_cd 동적 수집 완료 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
