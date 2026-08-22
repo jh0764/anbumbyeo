@@ -59,7 +59,6 @@ export default function FestivalBottomSheet({
 
   const handleClose = () => {
     onModeChange('collapsed');
-    onClose();
   };
 
   const sortedParkingLots = [...festival.parkingLots].sort(
