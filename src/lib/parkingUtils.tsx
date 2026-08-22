@@ -12,7 +12,7 @@ export function isParkingLive(parking: any): boolean {
 export function getParkingAvailableSpots(parking: any): number | null {
   if (!parking) return null;
   const avail = parking.availableSpots ?? parking.availableSpaces;
-  if (avail !== null && avail !== undefined && !isNaN(Number(avail))) {
+  if (avail !== null && avail !== undefined && String(avail).trim() !== '' && !isNaN(Number(avail))) {
     return Number(avail);
   }
   return null;

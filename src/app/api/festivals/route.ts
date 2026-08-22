@@ -201,8 +201,9 @@ export async function GET(request: NextRequest) {
     const isFestival = contentTypeId === '15';
 
     let rawList: any[] = [];
-    const todayStr = '20260821';
-    const todayNum = 20260821;
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const todayNum = parseInt(todayStr, 10);
 
     if (isFestival) {
       const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=${todayStr}&numOfRows=100&arrange=A`;
@@ -365,29 +366,27 @@ export async function GET(request: NextRequest) {
       const rawName = String(info.prl_nm || info.prk_nm || '');
       const rawSource = String(info.souc_nm || '');
       const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
-      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10) || 0;
 
-      const cleanedNameTemp = cleanParkingName(rawName);
-      const isDirectVenueParkingTemp =
-        cleanedNameTemp.includes('벡스코') ||
-        cleanedNameTemp.includes('BEXCO') ||
-        cleanedNameTemp.includes('전시장') ||
-        cleanedNameTemp.includes('컨벤션');
+      // --- [1단계] 전기차 충전 전용 주차장 배제 (면수와 무관하게 먼저 확인) ---
+      const evKeywords = /충전기|충전소|전기차|EV충전|전기자동차/i;
+      const isEVOnly =
+        rawSource.includes('한국환경공단') ||
+        (evKeywords.test(rawName) && totalSpaces <= 10);
+      if (isEVOnly) continue;
 
-      if (totalSpaces < 6 && !isDirectVenueParkingTemp) {
-        continue;
-      }
+      // --- [2단계] 장애인 전용 주차장 배제 (면수와 무관하게 먼저 확인) ---
+      const disabledKeywords = /장애인\s*전용|장애인\s*주차|장애인구역/i;
+      const isDisabledOnly = disabledKeywords.test(rawName);
+      if (isDisabledOnly) continue;
 
+      // --- [3단계] 주거지(아파트/빌라 등) 부설 주차장 배제 ---
       const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠|래미안|자이|푸르지오|힐스테이트|아이파크|더샵|e편한세상|롯데캐슬|SK뷰|SKVIEW|호반|베르디움|중흥|카이저|포레스트/i;
       if (residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr)) {
         continue;
       }
 
-      const isEVOnlyStation =
-        (rawSource.includes('한국환경공단') || rawName.includes('충전기') || rawName.includes('충전소')) &&
-        totalSpaces <= 5;
-      if (isEVOnlyStation) continue;
-
+      // --- [4단계] 중복 시설 그룹핑 (같은 이름 → 큰 면수 우선) ---
       const cleanedName = cleanParkingName(rawName);
       const groupKey = cleanedName.includes('벡스코') || cleanedName.includes('BEXCO')
         ? '벡스코_GROUP'
@@ -397,7 +396,7 @@ export async function GET(request: NextRequest) {
       if (!existing) {
         facilityGroupMap.set(groupKey, info);
       } else {
-        const existingSpaces = parseInt(existing.sum_park_cnt || existing.gnr_park_cnt || '0', 10);
+        const existingSpaces = parseInt(existing.sum_park_cnt || existing.gnr_park_cnt || '0', 10) || 0;
         if (totalSpaces > existingSpaces) {
           facilityGroupMap.set(groupKey, info);
         }
@@ -405,30 +404,34 @@ export async function GET(request: NextRequest) {
     }
 
     // 핀포인트 1:1 강제 실시간 조인 (1,000건 누락 방지 강제 결합)
+    // 배치 청킹: 최대 10개씩 순차 배치로 API 레이트 리밋 방지
     const rawCandidateList = Array.from(facilityGroupMap.values());
-    const pinpointCodesToQuery = rawCandidateList.map((info) => String(info.std_prl_cd || info.std_prk_mg_no || '').trim()).filter(Boolean);
+    const pinpointCodesToQuery = rawCandidateList
+      .map((info) => String(info.std_prl_cd || info.std_prk_mg_no || '').trim())
+      .filter((code) => code && !liveMap.has(code));
 
-    const pinpointPromises = pinpointCodesToQuery.map(async (code) => {
-      if (liveMap.has(code)) return null;
-      const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
-      try {
-        const sRes = await fetch(statusUrl, {
-          cache: 'no-store',
-          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-        });
-        if (!sRes.ok) return null;
-        const sJson = await sRes.json();
-        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
-        const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
-        return { code, liveData: sItems[0] || null };
-      } catch {
-        return null;
-      }
-    });
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < pinpointCodesToQuery.length; i += BATCH_SIZE) {
+      const batch = pinpointCodesToQuery.slice(i, i + BATCH_SIZE);
+      const batchPromises = batch.map(async (code) => {
+        const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
+        try {
+          const sRes = await fetch(statusUrl, {
+            cache: 'no-store',
+            headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+          });
+          if (!sRes.ok) return null;
+          const sJson = await sRes.json();
+          const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
+          const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+          return { code, liveData: sItems[0] || null };
+        } catch {
+          return null;
+        }
+      });
 
-    const pinpointResults = await Promise.allSettled(pinpointPromises);
-    if (Array.isArray(pinpointResults)) {
-      for (const resObj of pinpointResults) {
+      const batchResults = await Promise.allSettled(batchPromises);
+      for (const resObj of batchResults) {
         if (resObj.status === 'fulfilled' && resObj.value) {
           const { code, liveData } = resObj.value;
           if (code && liveData && !liveMap.has(code)) {
@@ -445,21 +448,10 @@ export async function GET(request: NextRequest) {
       const lng = parseFloat(info.lo_val || info.lng || '0');
       const rawName = String(info.prl_nm || info.prk_nm || '');
       const cleanedName = cleanParkingName(rawName);
-      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10) || 0;
 
-      const isDirectVenueParking =
-        cleanedName.includes('벡스코') ||
-        cleanedName.includes('BEXCO') ||
-        cleanedName.includes('전시장') ||
-        cleanedName.includes('컨벤션') ||
-        cleanedName.includes('경기장') ||
-        cleanedName.includes('황령산') ||
-        cleanedName.includes('세종로') ||
-        cleanedName.includes('성수') ||
-        cleanedName.includes('신설동') ||
-        cleanedName.includes('봉천복개');
-
-      if (totalSpaces < 6 && !isDirectVenueParking) continue;
+      // 필터링은 이미 1~3단계에서 완료됨 (전기차/장애인/주거지 배제)
+      // 여기서는 추가 면수 필터 없이 모든 정규 주차장 포함
 
       const isPublic = isStrictPublicParking(info);
       const code = String(info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`).trim();

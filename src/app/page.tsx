@@ -11,7 +11,7 @@ import FestivalBottomSheet, { BottomSheetMode } from '@/components/festival/Fest
 import { fetchFestivals } from '@/services/api';
 import { Festival, Region, CategoryType, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
-import { Info } from 'lucide-react';
+import { Info, RefreshCw } from 'lucide-react';
 
 const REGION_COORDINATES: Record<Region, { mapX: string; mapY: string }> = {
   서울: { mapX: '126.9780', mapY: '37.5665' },
@@ -35,10 +35,12 @@ export default function Home() {
   const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // 백엔드 API 호출 및 실데이터 수집 함수
   const loadFestivals = useCallback(async (cat: CategoryType, reg: Region, overrideCoords?: { mapX: number; mapY: number }) => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const coords = overrideCoords
         ? { mapX: overrideCoords.mapX.toString(), mapY: overrideCoords.mapY.toString() }
@@ -54,9 +56,13 @@ export default function Home() {
 
       if (data && Array.isArray(data)) {
         setFestivals(data);
+        if (data.length === 0) {
+          setErrorMessage(null); // 정상 응답이지만 결과 없음 — 에러 아님
+        }
       }
     } catch (err) {
       console.error('Failed to load festivals from API:', err);
+      setErrorMessage('데이터를 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 시도해주세요.');
     } finally {
       setIsLoading(false);
     }
@@ -188,6 +194,20 @@ export default function Home() {
           <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-500 gap-2">
             <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
             <p className="text-xs font-bold">365일 실시간 명소 & 공영주차장 정보를 불러오는 중...</p>
+          </div>
+        ) : errorMessage ? (
+          <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center text-slate-600 gap-3 px-6">
+            <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+              <RefreshCw className="w-6 h-6 text-rose-500" />
+            </div>
+            <p className="text-sm font-bold text-center">{errorMessage}</p>
+            <button
+              onClick={() => loadFestivals(selectedCategory, selectedRegion)}
+              className="mt-1 px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              다시 시도
+            </button>
           </div>
         ) : (
           <MainMap
