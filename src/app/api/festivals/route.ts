@@ -26,6 +26,8 @@ const SIGUNGU_CODE_MAP: Record<string, string> = {
   // 부산
   '수영구': '26500', '해운대구': '26350', '사상구': '26530', '부산진구': '26230',
   '남구': '26290', '연제구': '26470', '동래구': '26260', '금정구': '26410',
+  // 울산
+  '울산 남구': '31140', '울산 중구': '31110',
   // 기타 주요 도시
   '수원시': '41110', '강릉시': '42150', '서천군': '44770', '보령시': '44180',
   '여수시': '46130', '전주시': '45111', '경주시': '47130', '제주시': '50110',
@@ -49,6 +51,7 @@ function getSigunguCodeFromAddress(address: string, lat: number, lng: number): s
   if (address.includes('광안') || address.includes('민락')) return '26500';
   if (address.includes('벡스코') || address.includes('센텀')) return '26350';
   if (address.includes('삼락')) return '26530';
+  if (address.includes('울산')) return '31140';
   if (address.includes('서울')) return '11140';
   if (address.includes('부산')) return '26500';
 
@@ -57,45 +60,32 @@ function getSigunguCodeFromAddress(address: string, lat: number, lng: number): s
 }
 
 function getRegionFromAddress(address: string, lat: number, lng: number): Region {
-  if (!address) return '서울';
-
-  if (address.includes('부산') || address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('황령산') || address.includes('부산진') || address.includes('연제') || address.includes('남구') || address.includes('센텀') || address.includes('벡스코')) {
-    return '부산';
-  }
-  if (address.includes('대구') || address.includes('수성') || address.includes('달서')) {
-    return '대구';
-  }
-  if (address.includes('대전') || address.includes('유성')) {
-    return '대전';
-  }
-  if (address.includes('서울') || address.includes('성수') || address.includes('연무장') || address.includes('성동구') || address.includes('마포') || address.includes('성산') || address.includes('종로') || address.includes('강남') || address.includes('동대문') || address.includes('관악')) {
+  if (!address) {
+    if (lat > 37.3) return '서울';
+    if (lng > 128.8 && lat < 35.5) return '부산';
     return '서울';
   }
-  if (address.includes('경기') || address.includes('인천') || address.includes('수원') || address.includes('구리')) {
-    return '경기·인천';
-  }
-  if (address.includes('강원') || address.includes('강릉') || address.includes('춘천') || address.includes('속초')) {
-    return '강원';
-  }
-  if (address.includes('충청') || address.includes('세종') || address.includes('서천') || address.includes('보령') || address.includes('충남') || address.includes('충북') || address.includes('청주')) {
-    return '충청';
-  }
-  if (address.includes('전라') || address.includes('광주') || address.includes('전남') || address.includes('전북') || address.includes('군산') || address.includes('여수') || address.includes('전주')) {
-    return '전라';
-  }
-  if (address.includes('경상') || address.includes('울산') || address.includes('경남') || address.includes('경북') || address.includes('경주') || address.includes('포항') || address.includes('창원')) {
-    return '경상';
-  }
-  if (address.includes('제주') || address.includes('서귀포')) {
-    return '제주';
+
+  // 최우선 시도 주소 키워드 검사 (울산, 대구 등 타 광역시가 부산으로 쏠리지 않도록 엄격 분리)
+  if (address.includes('부산')) return '부산';
+  if (address.includes('울산')) return '경상';
+  if (address.includes('대구')) return '대구';
+  if (address.includes('대전')) return '대전';
+  if (address.includes('광주')) return '전라';
+  if (address.includes('서울')) return '서울';
+  if (address.includes('인천') || address.includes('경기')) return '경기·인천';
+  if (address.includes('강원')) return '강원';
+  if (address.includes('세종') || address.includes('충남') || address.includes('충북') || address.includes('충청')) return '충청';
+  if (address.includes('전남') || address.includes('전북') || address.includes('전라')) return '전라';
+  if (address.includes('경남') || address.includes('경북') || address.includes('경상')) return '경상';
+  if (address.includes('제주') || address.includes('서귀포')) return '제주';
+
+  if (address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('부산진') || address.includes('연제') || address.includes('벡스코')) {
+    return '부산';
   }
 
   if (lat > 37.3) return '서울';
-  if (lat > 36.8 && lng < 127.5) return '경기·인천';
-  if (lng > 128.5 && lat > 37.0) return '강원';
   if (lng > 128.8 && lat < 35.5) return '부산';
-  if (lng > 128.3 && lat < 36.0) return '경상';
-  if (lat < 35.8) return '전라';
   return '서울';
 }
 
@@ -293,6 +283,7 @@ export async function GET(request: NextRequest) {
     sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
     sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
     sigunguCodesToQuery.add('26530'); // 사상구 (삼락)
+    sigunguCodesToQuery.add('31140'); // 울산 남구 (울산대공원)
 
     let parkingInfoList: any[] = [];
     const liveMap = new Map<string, any>();
@@ -373,7 +364,6 @@ export async function GET(request: NextRequest) {
       const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // [엄격 적용: 1면~5면 초소형 노면/장애인/전기차 전용 배제]
       const cleanedNameTemp = cleanParkingName(rawName);
       const isDirectVenueParkingTemp =
         cleanedNameTemp.includes('벡스코') ||
@@ -485,10 +475,6 @@ export async function GET(request: NextRequest) {
       if (isLiveValid) {
         currentParked = Number(rawParked);
         availableSpaces = Math.max(0, finalTotalSpaces - currentParked);
-      }
-
-      if (cleanedName.includes('신설동') || cleanedName.includes('봉천복개') || cleanedName.includes('한화생명') || cleanedName.includes('프레지던트') || cleanedName.includes('메리츠')) {
-        console.log(`[Parking Join] ${cleanedName} (코드: ${code}) 매칭 성공: ${isLiveValid}, 총면수: ${finalTotalSpaces}, 잔여: ${availableSpaces}면`);
       }
 
       const feeInfo = parseFeeInfoFromApi(info, isPublic);
@@ -685,8 +671,6 @@ export async function GET(request: NextRequest) {
       }
       return bStart - aStart;
     });
-
-    console.log('[6면 미만 배제 필터링 강화 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
