@@ -22,8 +22,7 @@ const SIGUNGU_CODE_MAP: Record<string, string> = {
   '성동구': '11200', '마포구': '11440', '중구': '11140', '종로구': '11110',
   '강남구': '11680', '영등포구': '11560', '용산구': '11170', '성북구': '11290',
   '강서구': '11500', '송파구': '11710', '서초구': '11650', '관악구': '11620',
-  '동대문구': '11230', '서대문구': '11410', '동작구': '11590', '은평구': '11380',
-  '광진구': '11215',
+  '동대문구': '11230', '광진구': '11215',
   // 부산
   '수영구': '26500', '해운대구': '26350', '사상구': '26530', '부산진구': '26230',
   '남구': '26290', '연제구': '26470', '동래구': '26260', '금정구': '26410',
@@ -42,6 +41,8 @@ function getSigunguCodeFromAddress(address: string, lat: number, lng: number): s
     if (address.includes(key)) return code;
   }
 
+  if (address.includes('신설동') || address.includes('동대문')) return '11230';
+  if (address.includes('봉천') || address.includes('관악')) return '11620';
   if (address.includes('종로') || address.includes('세종로')) return '11110';
   if (address.includes('마포') || address.includes('성산') || address.includes('월드컵')) return '11440';
   if (address.includes('성수') || address.includes('연무장') || address.includes('성동')) return '11200';
@@ -67,7 +68,7 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Region
   if (address.includes('대전') || address.includes('유성')) {
     return '대전';
   }
-  if (address.includes('서울') || address.includes('성수') || address.includes('연무장') || address.includes('성동구') || address.includes('마포') || address.includes('성산') || address.includes('종로') || address.includes('강남')) {
+  if (address.includes('서울') || address.includes('성수') || address.includes('연무장') || address.includes('성동구') || address.includes('마포') || address.includes('성산') || address.includes('종로') || address.includes('강남') || address.includes('동대문') || address.includes('관악')) {
     return '서울';
   }
   if (address.includes('경기') || address.includes('인천') || address.includes('수원') || address.includes('구리')) {
@@ -283,13 +284,15 @@ export async function GET(request: NextRequest) {
     }
 
     sigunguCodesToQuery.add(getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng));
+    sigunguCodesToQuery.add('11230'); // 동대문구 (신설동)
+    sigunguCodesToQuery.add('11620'); // 관악구 (봉천복개3)
     sigunguCodesToQuery.add('11110'); // 종로구 (세종로)
-    sigunguCodesToQuery.add('11440'); // 마포구
-    sigunguCodesToQuery.add('11200'); // 성동구
+    sigunguCodesToQuery.add('11440'); // 마포구 (서울프린지)
+    sigunguCodesToQuery.add('11200'); // 성동구 (성수동)
     sigunguCodesToQuery.add('11140'); // 서울 중구
-    sigunguCodesToQuery.add('26500'); // 수영구
-    sigunguCodesToQuery.add('26350'); // 해운대구
-    sigunguCodesToQuery.add('26530'); // 사상구
+    sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
+    sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
+    sigunguCodesToQuery.add('26530'); // 사상구 (삼락)
 
     let parkingInfoList: any[] = [];
     const liveMap = new Map<string, any>();
@@ -357,39 +360,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // std_prl_cd 핀포인트 보충 쿼리 (미등록 방지 보조)
-    const pinpointCodes = Array.from(seenCodes).slice(0, 80);
-    const fetchPinpointPromises = pinpointCodes.map(async (code) => {
-      if (liveMap.has(code)) return null;
-      const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
-      try {
-        const sRes = await fetch(statusUrl, {
-          cache: 'no-store',
-          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-        });
-        if (!sRes.ok) return null;
-        const sJson = await sRes.json();
-        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
-        const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
-        return { code, liveData: sItems[0] || null };
-      } catch {
-        return null;
-      }
-    });
-
-    const pinpointResults = await Promise.allSettled(fetchPinpointPromises);
-    if (Array.isArray(pinpointResults)) {
-      for (const resObj of pinpointResults) {
-        if (resObj.status === 'fulfilled' && resObj.value) {
-          const { code, liveData } = resObj.value;
-          if (code && liveData && !liveMap.has(code)) {
-            liveMap.set(code, liveData);
-          }
-        }
-      }
-    }
-
-    // 4. 주거용 건물 배제 & 후보군 조인 및 실시간 판정
+    // 4. 주거용 건물 배제 & 후보군 그룹화
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -428,9 +399,43 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 핀포인트 1:1 강제 실시간 조인 (1,000건 누락 방지 강제 결합)
+    const rawCandidateList = Array.from(facilityGroupMap.values());
+    const pinpointCodesToQuery = rawCandidateList.map((info) => String(info.std_prl_cd || info.std_prk_mg_no || '').trim()).filter(Boolean);
+
+    const pinpointPromises = pinpointCodesToQuery.map(async (code) => {
+      if (liveMap.has(code)) return null;
+      const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
+      try {
+        const sRes = await fetch(statusUrl, {
+          cache: 'no-store',
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        });
+        if (!sRes.ok) return null;
+        const sJson = await sRes.json();
+        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
+        const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+        return { code, liveData: sItems[0] || null };
+      } catch {
+        return null;
+      }
+    });
+
+    const pinpointResults = await Promise.allSettled(pinpointPromises);
+    if (Array.isArray(pinpointResults)) {
+      for (const resObj of pinpointResults) {
+        if (resObj.status === 'fulfilled' && resObj.value) {
+          const { code, liveData } = resObj.value;
+          if (code && liveData && !liveMap.has(code)) {
+            liveMap.set(code, liveData);
+          }
+        }
+      }
+    }
+
     const candidateParkingList: Parking[] = [];
 
-    for (const info of Array.from(facilityGroupMap.values())) {
+    for (const info of rawCandidateList) {
       const lat = parseFloat(info.la_val || info.lat || '0');
       const lng = parseFloat(info.lo_val || info.lng || '0');
       const rawName = String(info.prl_nm || info.prk_nm || '');
@@ -445,7 +450,9 @@ export async function GET(request: NextRequest) {
         cleanedName.includes('경기장') ||
         cleanedName.includes('황령산') ||
         cleanedName.includes('세종로') ||
-        cleanedName.includes('성수');
+        cleanedName.includes('성수') ||
+        cleanedName.includes('신설동') ||
+        cleanedName.includes('봉천복개');
 
       if (totalSpaces < 10 && !isDirectVenueParking) continue;
 
@@ -466,6 +473,10 @@ export async function GET(request: NextRequest) {
       if (isLiveValid) {
         currentParked = Number(rawParked);
         availableSpaces = Math.max(0, finalTotalSpaces - currentParked);
+      }
+
+      if (cleanedName.includes('신설동') || cleanedName.includes('봉천복개') || cleanedName.includes('마포구청') || cleanedName.includes('월드컵공원')) {
+        console.log(`[Parking Join] ${cleanedName} (코드: ${code}) 매칭 성공: ${isLiveValid}, 현재입차: ${rawParked}, 잔여: ${availableSpaces}면`);
       }
 
       const feeInfo = parseFeeInfoFromApi(info, isPublic);
@@ -552,7 +563,9 @@ export async function GET(request: NextRequest) {
           p.name.includes('광안') ||
           p.name.includes('민락') ||
           p.name.includes('해운대') ||
-          p.name.includes('삼락');
+          p.name.includes('삼락') ||
+          p.name.includes('신설동') ||
+          p.name.includes('봉천복개');
 
         let priorityScore = distM;
         if (isDirectVenueMatch) {
@@ -661,7 +674,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[In-Memory Map 조인 & 2단계 안전 슬롯 완수 건수]', sortedFestivals.length);
+    console.log('[Parking Join 검증 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
