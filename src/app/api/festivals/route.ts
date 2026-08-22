@@ -262,7 +262,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 각 축제별 전용 5자리 자치구 코드(SIGUNGU) 동적 수집 (마포구 11440, 성동구 11200, 중구 11140, 수영구 26500 등)
+    // 3. 자치구별 API 1 (기본정보) & API 2 (실시간현황) 동시 수집
     const targetCenterLat = parseFloat(mapY);
     const targetCenterLng = parseFloat(mapX);
 
@@ -277,8 +277,8 @@ export async function GET(request: NextRequest) {
     }
 
     sigunguCodesToQuery.add(getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng));
-    sigunguCodesToQuery.add('11440'); // 마포구 (서울프린지페스티벌 성산동)
-    sigunguCodesToQuery.add('11200'); // 성동구 (성수동 연무장길)
+    sigunguCodesToQuery.add('11440'); // 마포구 (서울프린지페스티벌)
+    sigunguCodesToQuery.add('11200'); // 성동구 (성수동 섬유기획전)
     sigunguCodesToQuery.add('11140'); // 서울 중구
     sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
     sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
@@ -287,6 +287,7 @@ export async function GET(request: NextRequest) {
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
+    // API 1: 기본정보 수집
     const fetchInfoPromises = Array.from(sigunguCodesToQuery).map(async (code) => {
       const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
       try {
@@ -303,12 +304,32 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const infoResults = await Promise.allSettled(fetchInfoPromises);
+    // API 2: 자치구별 전체 실시간 현황 수집
+    const fetchStatusPromises = Array.from(sigunguCodesToQuery).map(async (code) => {
+      const statusUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+      try {
+        const sRes = await fetch(statusUrl, {
+          cache: 'no-store',
+          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+        });
+        if (!sRes.ok) return [];
+        const sJson = await sRes.json();
+        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
+        return Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+      } catch {
+        return [];
+      }
+    });
+
+    const [infoResResult, statusResResult] = await Promise.allSettled([
+      Promise.all(fetchInfoPromises),
+      Promise.all(fetchStatusPromises),
+    ]);
 
     const seenCodes = new Set<string>();
-    for (const resObj of infoResults) {
-      if (resObj.status === 'fulfilled' && Array.isArray(resObj.value)) {
-        for (const item of resObj.value) {
+    if (infoResResult.status === 'fulfilled' && Array.isArray(infoResResult.value)) {
+      for (const resList of infoResResult.value) {
+        for (const item of resList) {
           const code = item.std_prl_cd || item.std_prk_mg_no;
           if (code && !seenCodes.has(code)) {
             seenCodes.add(code);
@@ -318,10 +339,21 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. std_prl_cd 기반 실시간 현황 API 핀포인트 1:1 파이프라인
-    const codesToFetchStatus = Array.from(seenCodes).slice(0, 100);
+    if (statusResResult.status === 'fulfilled' && Array.isArray(statusResResult.value)) {
+      for (const resList of statusResResult.value) {
+        for (const st of resList) {
+          const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
+          if (code && !parkingStatusMap.has(code)) {
+            parkingStatusMap.set(code, st);
+          }
+        }
+      }
+    }
 
-    const fetchStatusPromises = codesToFetchStatus.map(async (code) => {
+    // std_prl_cd 핀포인트 보충 쿼리 (미등록 방지)
+    const codesToFetchStatus = Array.from(seenCodes).slice(0, 50);
+    const fetchPinpointPromises = codesToFetchStatus.map(async (code) => {
+      if (parkingStatusMap.has(code)) return null;
       const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
       try {
         const sRes = await fetch(statusUrl, {
@@ -338,40 +370,20 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const [pinpointResults, generalStatusRes] = await Promise.allSettled([
-      Promise.all(fetchStatusPromises),
-      fetch(`${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000`, {
-        cache: 'no-store',
-        headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-      }),
-    ]);
-
-    if (pinpointResults.status === 'fulfilled' && Array.isArray(pinpointResults.value)) {
-      for (const st of pinpointResults.value) {
-        if (st) {
-          const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
+    const pinpointResults = await Promise.allSettled(fetchPinpointPromises);
+    if (Array.isArray(pinpointResults)) {
+      for (const res of pinpointResults) {
+        if (res.status === 'fulfilled' && res.value) {
+          const item = res.value;
+          const code = item.std_prl_cd || item.std_prk_mg_no || item.std_prk_cd;
           if (code) {
-            parkingStatusMap.set(code, st);
+            parkingStatusMap.set(code, item);
           }
         }
       }
     }
 
-    if (generalStatusRes.status === 'fulfilled' && generalStatusRes.value.ok) {
-      try {
-        const sJson = await generalStatusRes.value.json();
-        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
-        const sItems = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
-        for (const st of sItems) {
-          const code = st.std_prl_cd || st.std_prk_mg_no || st.std_prk_cd;
-          if (code && !parkingStatusMap.has(code)) {
-            parkingStatusMap.set(code, st);
-          }
-        }
-      } catch {}
-    }
-
-    // 5. 시설별 그룹화 & 공영/민영 정밀 파싱
+    // 5. 부적격 주차장 (아파트/빌라/맨션) 엄격 배제 & std_prl_cd In-Memory 1:1 Join
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -381,7 +393,13 @@ export async function GET(request: NextRequest) {
 
       const rawName = String(info.prl_nm || info.prk_nm || '');
       const rawSource = String(info.souc_nm || '');
+      const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+
+      const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠/i;
+      if (residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr)) {
+        continue;
+      }
 
       const isEVOnlyStation =
         (rawSource.includes('한국환경공단') || rawName.includes('충전기') || rawName.includes('충전소')) &&
@@ -426,22 +444,25 @@ export async function GET(request: NextRequest) {
 
       const isPublic = isStrictPublicParking(info);
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
+
+      // std_prl_cd 기반 1:1 In-Memory Join
       const status = parkingStatusMap.get(code);
-      const isRealtime = Boolean(status);
+      const isRealtime = Boolean(
+        status &&
+        (status.now_park_cnt !== undefined || status.sum_curr_use_park_cnt !== undefined || status.cur_use_prk_cnt !== undefined)
+      );
 
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? 2400
         : (totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 100));
 
       let availableSpaces = finalTotalSpaces;
-      if (status) {
+      if (isRealtime && status) {
         const occupied = parseInt(
           status.now_park_cnt || status.sum_curr_use_park_cnt || status.cur_use_prk_cnt || '0',
           10
         );
         availableSpaces = Math.max(0, finalTotalSpaces - occupied);
-      } else {
-        availableSpaces = Math.floor(finalTotalSpaces * 0.65);
       }
 
       const feeInfo = parseFeeInfoFromApi(info, isPublic);
@@ -462,7 +483,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 6. [축제별 독립 매핑 & 최대 5개 무조건 슬롯 엄격 제한]: 공영 우선 최단거리 3개 + 민영 최단거리 2개 -> 무조건 slice(0, 5)
+    // 6. [축제별 독립 매핑 & 최대 5개 무조건 슬롯 제한]: 공영 최단거리 3개 + 민영 최단거리 2개
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -548,17 +569,14 @@ export async function GET(request: NextRequest) {
           nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2500);
         }
 
-        // 거리/가산점 기본 정렬
         nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
 
-        // [최대 5개 엄격 슬롯 구성]: 공영 최단거리 3개 + 민영 최단거리 2개
         const directParkings = nearbyList.filter((p) => p.priorityScore < -1000);
         const remainingList = nearbyList.filter((p) => p.priorityScore >= -1000);
 
         const publicParkings = remainingList.filter((p) => p.isPublic).slice(0, 3);
         const privateParkings = remainingList.filter((p) => !p.isPublic).slice(0, 2);
 
-        // 공영 주차장 최상단 노출 및 무조건 최대 5개로 슬라이스 제한!
         const finalParkingLots: Parking[] = [...directParkings, ...publicParkings, ...privateParkings].slice(0, 5);
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
@@ -613,7 +631,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[축제별 자치구 독립 파이프라인 & 최대 5개 제한 완수 건수]', sortedFestivals.length);
+    console.log('[std_prl_cd In-Memory 1:1 Join & 아파트 필터링 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
