@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 're
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking, Region } from '@/types';
+import { renderParkingBadge } from '@/lib/parkingUtils';
 import { Plus, Minus, Search, RefreshCw, Car } from 'lucide-react';
 
 interface LeafletMapInnerProps {
@@ -344,19 +345,9 @@ export default function LeafletMapInner({
                       </div>
                     </div>
 
-                    <div className="text-[11px] font-extrabold my-1 flex items-center justify-between">
-                      <span className="text-indigo-700 font-extrabold">{parking.distance}</span>
-                      <span>
-                        {parking.isLive && parking.availableSpots !== undefined && parking.availableSpots !== null ? (
-                          parking.availableSpots === 0 ? (
-                            <span className="text-rose-600 font-bold">만차 (0/{parking.totalSpaces}면)</span>
-                          ) : (
-                            <span className="text-emerald-600 font-bold">잔여 {parking.availableSpots}/{parking.totalSpaces}면</span>
-                          )
-                        ) : (
-                          <span className="text-slate-600 font-bold">총 {parking.totalSpaces}면 (현장확인)</span>
-                        )}
-                      </span>
+                    <div className="text-[11px] font-extrabold my-1 flex items-center justify-between gap-1">
+                      <span className="text-indigo-700 font-extrabold shrink-0">{parking.distance}</span>
+                      {renderParkingBadge(parking)}
                     </div>
 
                     <div className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate">

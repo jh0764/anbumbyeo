@@ -3,6 +3,7 @@
 import { useRef, useEffect } from 'react';
 import { Festival, Parking } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
+import { renderParkingBadge } from '@/lib/parkingUtils';
 import { Users, Car, MapPin, Calendar, Clock, AlertCircle, Navigation, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -172,13 +173,7 @@ export default function FestivalCarousel({
                           </div>
 
                           <div className="flex items-center gap-2 text-[10px] mt-0.5 flex-wrap">
-                            <span className="font-extrabold text-indigo-900">
-                              {nearestParking.isLive && nearestParking.availableSpots !== undefined && nearestParking.availableSpots !== null ? (
-                                <span className="text-emerald-700 font-extrabold">잔여 {nearestParking.availableSpots}/{nearestParking.totalSpaces}면</span>
-                              ) : (
-                                <span className="text-slate-600 font-bold">총 {nearestParking.totalSpaces}면 (현장확인)</span>
-                              )}
-                            </span>
+                            {renderParkingBadge(nearestParking)}
                             <span className="text-slate-400">·</span>
                             <span className="text-slate-600 font-medium">
                               🏷️ {nearestParking.feeInfo || '현장 요금제'}

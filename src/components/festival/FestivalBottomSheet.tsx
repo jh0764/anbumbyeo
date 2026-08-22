@@ -2,6 +2,7 @@
 
 import { Festival } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
+import { renderParkingBadge } from '@/lib/parkingUtils';
 import {
   X,
   MapPin,
@@ -212,22 +213,7 @@ export default function FestivalBottomSheet({
 
                     {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 */}
                     <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                      {parking.isLive && parking.availableSpots !== null && parking.availableSpots !== undefined ? (
-                        parking.availableSpots === 0 ? (
-                          <span className="bg-rose-100 text-rose-700 font-semibold px-2.5 py-1 rounded-full text-xs shrink-0 border border-rose-200">
-                            만차 (0/{parking.totalSpaces}면)
-                          </span>
-                        ) : (
-                          <span className="bg-emerald-100 text-emerald-700 font-semibold px-2.5 py-1 rounded-full text-xs shrink-0 border border-emerald-200 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            잔여 {parking.availableSpots}/{parking.totalSpaces}면
-                          </span>
-                        )
-                      ) : (
-                        <span className="bg-slate-100 text-slate-600 font-medium px-2.5 py-1 rounded-full text-xs shrink-0 border border-slate-200">
-                          총 {parking.totalSpaces}면 (현장확인)
-                        </span>
-                      )}
+                      {renderParkingBadge(parking)}
 
                       <button
                         onClick={() => handleOpenNavi(parking.name)}
