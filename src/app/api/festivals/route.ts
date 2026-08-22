@@ -411,7 +411,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 축제별 독립 매핑 (1단계: 주변 유효 주차장 5개 확정)
+    // 5. 축제별 후보군 1차 선별
     const validFestivalsRaw = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -448,75 +448,31 @@ export async function GET(request: NextRequest) {
         return true;
       });
 
-    // 6. [핵심 2단계]: 1차 확정된 축제 주변 주차장의 std_prl_cd 수집 및 핀포인트 1:1 실시간 병렬 직접 호출
+    // 6. 핀포인트 실시간 현황 수신을 위해 주변 5km 내 주요 주차장 코드 수집
     const targetParkingCodesToFetch = new Set<string>();
 
-    const festivalCandidates = validFestivalsRaw.map((f: any) => {
+    const festivalPreCandidates = validFestivalsRaw.map((f: any) => {
       const festLat = parseFloat(f.mapy);
       const festLng = parseFloat(f.mapx);
-      const festAddress = f.addr1 || '';
-      const festTitle = f.title || '';
 
       const evaluatedLots = candidateParkingList.map((p) => {
         const distM = calculateDistance(festLat, festLng, p.lat, p.lng);
-        const parkingAddr = p.address || '';
-        const isDirectVenueMatch =
-          (festTitle.includes('벡스코') || festAddress.includes('APEC로') || festAddress.includes('벡스코')) &&
-          (p.name.includes('벡스코') || p.name.includes('BEXCO') || p.name.includes('전시장') || p.name.includes('컨벤션') || parkingAddr.includes('APEC로'));
-
-        const isGenericDirectMatch =
-          p.name.includes('황령산') ||
-          p.name.includes('봉수대') ||
-          p.name.includes('전망대') ||
-          p.name.includes('쉼터') ||
-          p.name.includes('성수') ||
-          p.name.includes('연무장') ||
-          p.name.includes('월드컵') ||
-          p.name.includes('마포') ||
-          p.name.includes('광안') ||
-          p.name.includes('민락') ||
-          p.name.includes('해운대') ||
-          p.name.includes('삼락') ||
-          p.name.includes('생태공원');
-
-        let priorityScore = distM;
-        if (isDirectVenueMatch) {
-          priorityScore = distM - 10000;
-        } else if (distM <= 300 || isGenericDirectMatch) {
-          priorityScore = distM - 3000;
-        }
-
         return {
           ...p,
           distanceMeters: distM,
-          distance: formatWalkingDistanceText(distM),
-          priorityScore,
         };
       });
 
+      // 반경 내 후보군 확보 (1.5km -> 3km -> 5km)
       let nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 1500);
-      if (nearbyList.length < 2) {
-        nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2500);
-      }
+      if (nearbyList.length < 5) nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 3000);
+      if (nearbyList.length < 5) nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 5000);
 
-      nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
-
-      const directParkings = nearbyList.filter((p) => p.priorityScore < -1000);
-      const remainingList = nearbyList.filter((p) => p.priorityScore >= -1000);
-
-      const publicParkings = remainingList.filter((p) => p.isPublic).slice(0, 3);
-      const privateParkings = remainingList.filter((p) => !p.isPublic).slice(0, 2);
-
-      const selected5Lots = [...directParkings, ...publicParkings, ...privateParkings].slice(0, 5);
-
-      for (const p of selected5Lots) {
+      for (const p of nearbyList.slice(0, 10)) {
         if (p.id) targetParkingCodesToFetch.add(p.id);
       }
 
-      return {
-        f,
-        selected5Lots,
-      };
+      return { f, evaluatedLots };
     });
 
     // 핀포인트 1:1 실시간 현황 API 다중 병렬 직접 호출
@@ -552,13 +508,42 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 7. 실시간 잔여석 바인딩 및 엄격한 Null/Undefined Check (0면도 정상 실시간 인정)
-    const resultFestivals: Festival[] = festivalCandidates.map(({ f, selected5Lots }, idx) => {
+    // 7. [핵심: 2단계 안전 주차장 슬롯 채움 알고리즘 적용]
+    const resultFestivals: Festival[] = festivalPreCandidates.map(({ f, evaluatedLots }, idx) => {
       const festLat = parseFloat(f.mapy);
       const festLng = parseFloat(f.mapx);
       const festAddress = f.addr1 || '';
+      const festTitle = f.title || '';
 
-      const finalParkingLots: Parking[] = selected5Lots.map((p) => {
+      const scoredLots = evaluatedLots.map((p) => {
+        const distM = p.distanceMeters;
+        const parkingAddr = p.address || '';
+        const isDirectVenueMatch =
+          (festTitle.includes('벡스코') || festAddress.includes('APEC로') || festAddress.includes('벡스코')) &&
+          (p.name.includes('벡스코') || p.name.includes('BEXCO') || p.name.includes('전시장') || p.name.includes('컨벤션') || parkingAddr.includes('APEC로'));
+
+        const isGenericDirectMatch =
+          p.name.includes('황령산') ||
+          p.name.includes('봉수대') ||
+          p.name.includes('전망대') ||
+          p.name.includes('쉼터') ||
+          p.name.includes('성수') ||
+          p.name.includes('연무장') ||
+          p.name.includes('월드컵') ||
+          p.name.includes('마포') ||
+          p.name.includes('광안') ||
+          p.name.includes('민락') ||
+          p.name.includes('해운대') ||
+          p.name.includes('삼락') ||
+          p.name.includes('생태공원');
+
+        let priorityScore = distM;
+        if (isDirectVenueMatch) {
+          priorityScore = distM - 10000;
+        } else if (distM <= 300 || isGenericDirectMatch) {
+          priorityScore = distM - 3000;
+        }
+
         const liveData = liveStatusMap.get(p.id);
         const parkedCount = liveData?.sum_curr_use_park_cnt ?? liveData?.now_park_cnt ?? liveData?.cur_use_prk_cnt;
 
@@ -569,25 +554,63 @@ export async function GET(request: NextRequest) {
 
         let availableSpaces = p.totalSpaces;
         let currentParked: number | null = null;
-
         if (isLiveValid) {
           currentParked = Number(parkedCount);
           availableSpaces = Math.max(0, p.totalSpaces - currentParked);
         }
 
-        const walkingMinutes = Math.max(1, Math.round(p.distanceMeters / 80));
+        const walkingMinutes = Math.max(1, Math.round(distM / 80));
 
         return {
           ...p,
+          distanceMeters: distM,
+          distance: formatWalkingDistanceText(distM),
+          walkingMinutes,
+          priorityScore,
           totalSpaces: p.totalSpaces,
           availableSpaces,
           availableSpots: isLiveValid ? availableSpaces : null,
           currentParked: isLiveValid ? currentParked : null,
-          walkingMinutes,
           isLive: isLiveValid,
           isRealtime: isLiveValid,
         };
       });
+
+      // 반경 확장 Fallback (1.5km -> 3km -> 5km)
+      let validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 1500);
+      if (validNearbyLots.length < 3) {
+        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 3000);
+      }
+      if (validNearbyLots.length < 3) {
+        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 5000);
+      }
+
+      // 그룹 분리: 직속 주차장 / 실시간 연동 주차장 / 일반 현장확인 주차장
+      const directVenueParkings = validNearbyLots.filter((p) => p.priorityScore < -1000);
+      const regularParkings = validNearbyLots.filter((p) => p.priorityScore >= -1000);
+
+      // 실시간 연동 그룹 (공영 우선 -> 거리순)
+      const liveParkings = regularParkings
+        .filter((p) => p.isLive)
+        .sort((a, b) => {
+          if (a.isPublic !== b.isPublic) return a.isPublic ? -1 : 1;
+          return a.priorityScore - b.priorityScore;
+        });
+
+      // 일반 현장확인 그룹 (공영 우선 -> 거리순)
+      const fallbackParkings = regularParkings
+        .filter((p) => !p.isLive)
+        .sort((a, b) => {
+          if (a.isPublic !== b.isPublic) return a.isPublic ? -1 : 1;
+          return a.priorityScore - b.priorityScore;
+        });
+
+      // 2단계 슬롯 조합: 직속 주차장 -> 실시간 연동 -> 일반 현장확인 (슬롯 5개 무조건 보장)
+      const finalParkingLots: Parking[] = [
+        ...directVenueParkings,
+        ...liveParkings,
+        ...fallbackParkings,
+      ].slice(0, 5);
 
       const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
       const region = getRegionFromAddress(festAddress, festLat, festLng);
@@ -642,7 +665,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[Falsy(0) 체크 버그 엄격 수정 완수 건수]', sortedFestivals.length);
+    console.log('[2단계 안전 주차장 슬롯 채움 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
