@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking, Region } from '@/types';
 import { renderParkingBadge } from '@/lib/parkingUtils';
-import { Plus, Minus, Search, RefreshCw, Car } from 'lucide-react';
+import { Plus, Minus, Search, RefreshCw, Car, Tag } from 'lucide-react';
 
 interface LeafletMapInnerProps {
   festivals: Festival[];
@@ -350,8 +350,9 @@ export default function LeafletMapInner({
                       {renderParkingBadge(parking)}
                     </div>
 
-                    <div className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate">
-                      🏷️ {parking.feeInfo || '요금 정보 현장확인'}
+                    <div className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate inline-flex items-center gap-1">
+                      <Tag className="w-3 h-3 text-slate-500 shrink-0" />
+                      <span>{parking.feeInfo || '요금 정보 현장확인'}</span>
                     </div>
 
                     {parking.address && (

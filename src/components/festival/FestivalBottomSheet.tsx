@@ -15,6 +15,7 @@ import {
   Sparkles,
   Info,
   Clock,
+  Tag,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -200,8 +201,9 @@ export default function FestivalBottomSheet({
                       </div>
 
                       {/* 요금 태그 */}
-                      <div className="text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-md font-medium inline-block mt-1">
-                        🏷️ {parking.feeInfo || '요금 정보 현장확인'}
+                      <div className="text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-md font-medium inline-flex items-center gap-1 mt-1">
+                        <Tag className="w-3 h-3 text-slate-500 shrink-0" />
+                        <span>{parking.feeInfo || '요금 정보 현장확인'}</span>
                       </div>
 
                       {parking.address && (

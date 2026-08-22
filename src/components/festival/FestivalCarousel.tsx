@@ -4,7 +4,7 @@ import { useRef, useEffect } from 'react';
 import { Festival, Parking } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
 import { renderParkingBadge } from '@/lib/parkingUtils';
-import { Users, Car, MapPin, Calendar, Clock, AlertCircle, Navigation, Sparkles } from 'lucide-react';
+import { Users, Car, MapPin, Calendar, Clock, AlertCircle, Navigation, Sparkles, Tag } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface FestivalCarouselProps {
@@ -175,8 +175,9 @@ export default function FestivalCarousel({
                           <div className="flex items-center gap-2 text-[10px] mt-0.5 flex-wrap">
                             {renderParkingBadge(nearestParking)}
                             <span className="text-slate-400">·</span>
-                            <span className="text-slate-600 font-medium">
-                              🏷️ {nearestParking.feeInfo || '현장 요금제'}
+                            <span className="text-slate-600 font-medium inline-flex items-center gap-1">
+                              <Tag className="w-3 h-3 text-slate-500 shrink-0" />
+                              <span>{nearestParking.feeInfo || '현장 요금제'}</span>
                             </span>
                           </div>
                         </div>

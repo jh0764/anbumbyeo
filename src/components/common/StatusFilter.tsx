@@ -2,6 +2,7 @@
 
 import { StatusFilterType } from '@/types';
 import { clsx } from 'clsx';
+import { Radio, Calendar } from 'lucide-react';
 
 interface StatusFilterProps {
   selectedStatus: StatusFilterType;
@@ -28,8 +29,8 @@ export default function StatusFilter({
               : 'bg-slate-100/90 text-slate-600 border-slate-200 hover:bg-slate-200'
           )}
         >
-          <span className="w-2 h-2 rounded-full bg-rose-300 animate-ping shrink-0" />
-          <span>🔴 실시간 진행 중</span>
+          <Radio className="w-3.5 h-3.5 shrink-0 animate-pulse text-rose-300" />
+          <span>실시간 진행 중</span>
           <span
             className={clsx(
               'px-1.5 py-0.2 rounded-full text-[10px] font-extrabold',
@@ -51,7 +52,8 @@ export default function StatusFilter({
               : 'bg-slate-100/90 text-slate-600 border-slate-200 hover:bg-slate-200'
           )}
         >
-          <span>📅 개막 예정</span>
+          <Calendar className="w-3.5 h-3.5 shrink-0" />
+          <span>개막 예정</span>
           <span
             className={clsx(
               'px-1.5 py-0.2 rounded-full text-[10px] font-extrabold',
