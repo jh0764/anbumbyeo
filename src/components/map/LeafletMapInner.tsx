@@ -81,7 +81,7 @@ function createParkingIcon(parking: Parking) {
         P
       </div>
       <div class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-900 text-[9px] font-extrabold px-1.5 py-0.3 rounded border border-slate-300 shadow-md">
-        ${parking.isRealtime ? (isFull ? '만차' : `${parking.availableSpaces}면`) : '공영'}
+        ${parking.isRealtime ? (isFull ? '만차' : `${parking.availableSpaces}면`) : (parking.isPublic ? '공영' : '민영')}
       </div>
     </div>
   `;

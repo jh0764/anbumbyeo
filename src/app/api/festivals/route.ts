@@ -12,6 +12,41 @@ const PARKING_INFO_API_URL =
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
+// 주요 자치구 5자리 법정동 코드 사전
+const SIGUNGU_CODE_MAP: Record<string, string> = {
+  // 서울
+  '성동구': '11200', '중구': '11140', '종로구': '11110', '마포구': '11440',
+  '강남구': '11680', '영등포구': '11560', '용산구': '11170', '성북구': '11290',
+  '강서구': '11500', '송파구': '11710', '서초구': '11650', '관악구': '11620',
+  // 부산
+  '수영구': '26500', '해운대구': '26350', '사상구': '26530', '부산진구': '26230',
+  '남구': '26290', '연제구': '26470', '동래구': '26260', '강서구(부산)': '26440',
+  // 기타 주요 도시
+  '수원시': '41110', '강릉시': '42150', '서천군': '44770', '보령시': '44180',
+  '여수시': '46130', '전주시': '45111', '경주시': '47130', '제주시': '50110',
+};
+
+function getSigunguCodeFromAddress(address: string, lat: number, lng: number): string {
+  if (!address) {
+    if (lat > 37.3) return '11140'; // 서울 중구 기본
+    return '26500'; // 부산 수영구 기본
+  }
+
+  for (const [key, code] of Object.entries(SIGUNGU_CODE_MAP)) {
+    if (address.includes(key)) return code;
+  }
+
+  if (address.includes('성수') || address.includes('연무장')) return '11200'; // 성동구
+  if (address.includes('광안') || address.includes('민락')) return '26500'; // 수영구
+  if (address.includes('벡스코') || address.includes('센텀')) return '26350'; // 해운대구
+  if (address.includes('삼락')) return '26530'; // 사상구
+  if (address.includes('서울')) return '11140';
+  if (address.includes('부산')) return '26500';
+
+  if (lat > 37.3) return '11140';
+  return '26500';
+}
+
 function getRegionFromAddress(address: string, lat: number, lng: number): Region {
   if (!address) return '서울';
 
@@ -75,16 +110,24 @@ function cleanParkingName(name: string): string {
     .trim();
 }
 
-function isPublicParkingDiv(info: any): boolean {
-  const divName = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '');
+// [공영/민영 엄격 분류 로직]
+function isStrictPublicParking(info: any): boolean {
   const rawName = String(info.prl_nm || info.prk_nm || '');
+  const rawDiv = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || info.prl_se_cd || '');
+  const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
 
-  if (divName.includes('민영')) {
+  // 1. 민영/사옥/호텔/빌딩/타워/마트/백화점/스퀘어/병원 등은 무조건 민영 (false)
+  const privateKeywords = /사옥|호텔|빌딩|타워|마트|백화점|민영|스퀘어|프라자|병원|교회|성당|신협|오피스|파이낸스|아파트|빌라|드림개발/i;
+  if (privateKeywords.test(rawName) || privateKeywords.test(rawAddr) || rawDiv.includes('민영')) {
     return false;
   }
-  if (divName.includes('공영') || divName.includes('부설') || divName.includes('노외') || rawName.includes('공영') || rawName.includes('성수') || rawName.includes('성동') || rawName.includes('벡스코') || rawName.includes('BEXCO') || rawName.includes('전시장') || rawName.includes('컨벤션') || rawName.includes('경기장') || rawName.includes('체육관') || rawName.includes('전망대') || rawName.includes('황령산') || rawName.includes('봉수대') || rawName.includes('쉼터')) {
+
+  // 2. 지자체 공영 명칭이 명확한 경우에만 공영 (true)
+  const publicKeywords = /공영|구립|시립|공단|구청|시청|동사무소|주민센터|행정복지센터|환승|노상|노외/;
+  if (rawDiv.includes('공영') || publicKeywords.test(rawName)) {
     return true;
   }
+
   return false;
 }
 
@@ -220,39 +263,33 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 서울(11/성동구 11200 - 성수동) & 부산(26/해운대 26350/수영 26500) 등 광역 주차장 동적 스위칭 병렬 수집
+    // 3. 자치구 5자리 동적 SIGUNGU 코드 파이프라인 (성동구 11200, 중구 11140, 수영구 26500, 해운대구 26350 등)
     const targetCenterLat = parseFloat(mapY);
     const targetCenterLng = parseFloat(mapX);
 
-    const targetCodes = new Set<string>();
+    const sigunguCodesToQuery = new Set<string>();
 
-    // 좌표 기반 동적 스위칭 (서울: 11 / 11200, 부산: 26 / 26500 등)
-    if (targetCenterLat > 37.3) {
-      // 서울·수도권
-      targetCodes.add('11'); // 서울특별시 전체
-      targetCodes.add('11200'); // 서울 성동구 (성수동 섬유기획전 연무장길)
-      targetCodes.add('11110'); // 서울 종로구
-      targetCodes.add('11140'); // 서울 중구
-      targetCodes.add('11440'); // 서울 마포구
-      targetCodes.add('11680'); // 서울 강남구
-      targetCodes.add('41110'); // 경기 수원
-    } else {
-      // 부산·경상권
-      targetCodes.add('26'); // 부산광역시 전체
-      targetCodes.add('26350'); // 부산 해운대구 (벡스코)
-      targetCodes.add('26500'); // 부산 수영구 (광안리)
-      targetCodes.add('26530'); // 부산 사상구 (삼락)
-      targetCodes.add('26230'); // 부산 부산진구 (서면)
-      targetCodes.add('26290'); // 부산 남구 (황령산)
-      targetCodes.add('26470'); // 부산 연제구
+    // 축제/명소 목록의 주소 기반 5자리 시군구 코드 자동 도출
+    for (const item of rawList.slice(0, 40)) {
+      const addr = item.addr1 || '';
+      const lat = parseFloat(item.mapy || '0');
+      const lng = parseFloat(item.mapx || '0');
+      const code = getSigunguCodeFromAddress(addr, lat, lng);
+      sigunguCodesToQuery.add(code);
     }
+
+    sigunguCodesToQuery.add(getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng));
+    sigunguCodesToQuery.add('11200'); // 성동구 (성수동 연무장길)
+    sigunguCodesToQuery.add('11140'); // 서울 중구
+    sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
+    sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
+    sigunguCodesToQuery.add('26530'); // 사상구 (삼락)
 
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
-    const fetchInfoPromises = Array.from(targetCodes).map(async (code) => {
-      const addrType = code.length === 2 ? 'SIGUNGU' : 'SIGUNGU';
-      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=${addrType}`;
+    const fetchInfoPromises = Array.from(sigunguCodesToQuery).map(async (code) => {
+      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
       try {
         const iRes = await fetch(infoUrl, {
           cache: 'no-store',
@@ -335,7 +372,7 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 5. [시설별 그룹화 & 일반 대형 면수 레코드 최우선 바인딩]
+    // 5. 시설별 그룹화 & 공영/민영 정밀 파싱
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -388,7 +425,8 @@ export async function GET(request: NextRequest) {
 
       if (totalSpaces < 10 && !isDirectVenueParking) continue;
 
-      const isPublic = isPublicParkingDiv(info);
+      // 공영/민영 엄격 판정
+      const isPublic = isStrictPublicParking(info);
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
@@ -426,7 +464,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 6. 성수동 섬유기획전 및 전국 축제별 주변 주차장 매핑
+    // 6. 노출 우선순위: 1순위 행사장 직속 주차장 -> 2순위 거리순 [공영] 최대 3개 -> 3순위 거리순 [민영] 최대 2개
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -510,12 +548,18 @@ export async function GET(request: NextRequest) {
           nearbyList = evaluatedLots.filter((p) => p.distanceMeters <= 2500);
         }
 
+        // 거리/가산점 순 기본 정렬
         nearbyList.sort((a, b) => a.priorityScore - b.priorityScore);
 
-        const publicParkings = nearbyList.filter((p) => p.isPublic).slice(0, 3);
-        const privateParkings = nearbyList.filter((p) => !p.isPublic).slice(0, 2);
+        // [노출 우선순위 구분 슬롯 배정]: 1순위 직속/초근접 -> 2순위 거리순 공영 최대 3개 -> 3순위 거리순 민영 최대 2개
+        const directParkings = nearbyList.filter((p) => p.priorityScore < -1000);
+        const remainingList = nearbyList.filter((p) => p.priorityScore >= -1000);
 
-        const finalParkingLots: Parking[] = [...publicParkings, ...privateParkings];
+        const publicParkings = remainingList.filter((p) => p.isPublic).slice(0, 3);
+        const privateParkings = remainingList.filter((p) => !p.isPublic).slice(0, 2);
+
+        // 공영이 무조건 민영보다 리스트 상단에 먼저 노출
+        const finalParkingLots: Parking[] = [...directParkings, ...publicParkings, ...privateParkings];
         const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
         const region = getRegionFromAddress(festAddress, festLat, festLng);
 
@@ -569,7 +613,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[서울 성수동 및 부산지역 동적 스위칭 완수 건수]', sortedFestivals.length);
+    console.log('[공영/민영 엄격 분류 & 자치구 5자리 SIGUNGU 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
