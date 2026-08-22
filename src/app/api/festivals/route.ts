@@ -48,6 +48,7 @@ function getSigunguCodeFromAddress(address: string, lat: number, lng: number): s
   if (address.includes('종로') || address.includes('세종로')) return '11110';
   if (address.includes('마포') || address.includes('성산') || address.includes('월드컵')) return '11440';
   if (address.includes('성수') || address.includes('연무장') || address.includes('성동')) return '11200';
+  if (address.includes('금정') || address.includes('부곡') || address.includes('서동')) return '26410';
   if (address.includes('광안') || address.includes('민락')) return '26500';
   if (address.includes('벡스코') || address.includes('센텀')) return '26350';
   if (address.includes('삼락')) return '26530';
@@ -66,13 +67,13 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Region
     return '서울';
   }
 
-  // 최우선 시도 주소 키워드 검사 (울산, 대구 등 타 광역시가 부산으로 쏠리지 않도록 엄격 분리)
+  // 최우선 광역시도 키워드 격리 (서울, 부산, 울산, 대구, 대전 등 100% 독립 분리)
   if (address.includes('부산')) return '부산';
+  if (address.includes('서울')) return '서울';
   if (address.includes('울산')) return '경상';
   if (address.includes('대구')) return '대구';
   if (address.includes('대전')) return '대전';
   if (address.includes('광주')) return '전라';
-  if (address.includes('서울')) return '서울';
   if (address.includes('인천') || address.includes('경기')) return '경기·인천';
   if (address.includes('강원')) return '강원';
   if (address.includes('세종') || address.includes('충남') || address.includes('충북') || address.includes('충청')) return '충청';
@@ -80,7 +81,7 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Region
   if (address.includes('경남') || address.includes('경북') || address.includes('경상')) return '경상';
   if (address.includes('제주') || address.includes('서귀포')) return '제주';
 
-  if (address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('부산진') || address.includes('연제') || address.includes('벡스코')) {
+  if (address.includes('해운대') || address.includes('수영') || address.includes('민락') || address.includes('기장') || address.includes('사상') || address.includes('부산진') || address.includes('연제') || address.includes('벡스코') || address.includes('금정')) {
     return '부산';
   }
 
@@ -183,6 +184,7 @@ export async function GET(request: NextRequest) {
     const mapY = searchParams.get('mapY') || '37.5665';
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
+    const requestedRegionParam = searchParams.get('region');
 
     const tourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
     const parkingApiKey = process.env.PARKING_API_KEY || tourApiKey;
@@ -279,10 +281,11 @@ export async function GET(request: NextRequest) {
     sigunguCodesToQuery.add('11110'); // 종로구 (세종로)
     sigunguCodesToQuery.add('11440'); // 마포구 (서울프린지)
     sigunguCodesToQuery.add('11200'); // 성동구 (성수동)
-    sigunguCodesToQuery.add('11140'); // 서울 중구 (서울시청, 한화생명, 프레지던트호텔)
+    sigunguCodesToQuery.add('11140'); // 서울 중구
     sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
     sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
     sigunguCodesToQuery.add('26530'); // 사상구 (삼락)
+    sigunguCodesToQuery.add('26410'); // 부산 금정구 (서동, 부곡동)
     sigunguCodesToQuery.add('31140'); // 울산 남구 (울산대공원)
 
     let parkingInfoList: any[] = [];
@@ -498,13 +501,21 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. 축제 후보군 필터링
+    // 5. 축제 후보군 필터링 (지역 탭 100% 엄격 격리 차단 적용)
     const validFestivalsRaw = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
         const typeIdStr = String(f.contenttypeid || f.contentTypeId || contentTypeId);
         const titleStr = String(f.title || '');
         const addrStr = String(f.addr1 || '');
+
+        // [엄격 적용: 요청된 region 권역 파라미터가 있는 경우 주소 필터링 100% 집행]
+        if (requestedRegionParam && requestedRegionParam !== '전국' && requestedRegionParam !== '전체') {
+          if (requestedRegionParam === '부산' && !addrStr.includes('부산')) return false;
+          if (requestedRegionParam === '서울' && !addrStr.includes('서울')) return false;
+          if (requestedRegionParam === '대구' && !addrStr.includes('대구')) return false;
+          if (requestedRegionParam === '대전' && !addrStr.includes('대전')) return false;
+        }
 
         if (typeIdStr === '12' || categoryParam === '공원·나들이') {
           if (isReligiousFacility(titleStr, addrStr)) {
