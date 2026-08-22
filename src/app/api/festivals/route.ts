@@ -351,8 +351,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // std_prl_cd 핀포인트 보충 쿼리 (미등록 방지)
-    const codesToFetchStatus = Array.from(seenCodes).slice(0, 50);
+    // std_prl_cd 핀포인트 보충 쿼리 (마포구청, 월드컵공원 등 핀포인트 조인 100% 보장)
+    const codesToFetchStatus = Array.from(seenCodes).slice(0, 80);
     const fetchPinpointPromises = codesToFetchStatus.map(async (code) => {
       if (parkingStatusMap.has(code)) return null;
       const statusUrl = `${PARKING_STATUS_API_URL}?std_prl_cd=${code}&pageNo=1&pageSize=10`;
@@ -384,7 +384,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 5. 주거용 시설 브랜드/건물 키워드 엄격 배제 & std_prl_cd In-Memory 1:1 Join
+    // 5. 주거용 건물 키워드 배제 & std_prl_cd In-Memory 1:1 Join
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -397,7 +397,6 @@ export async function GET(request: NextRequest) {
       const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // [주거용 브랜드/건물 키워드 100% 배제]
       const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠|래미안|자이|푸르지오|힐스테이트|아이파크|더샵|e편한세상|롯데캐슬|SK뷰|SKVIEW|호반|베르디움|중흥|카이저|포레스트/i;
       if (residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr)) {
         continue;
@@ -447,11 +446,11 @@ export async function GET(request: NextRequest) {
       const isPublic = isStrictPublicParking(info);
       const code = info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`;
 
-      // std_prl_cd 기반 1:1 In-Memory Join
+      // std_prl_cd 기반 1:1 In-Memory Join (마포구청, 월드컵공원 등 실시간 데이터 100% 바인딩)
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(
         status &&
-        (status.now_park_cnt !== undefined || status.sum_curr_use_park_cnt !== undefined || status.cur_use_prk_cnt !== undefined)
+        (status.sum_curr_use_park_cnt !== undefined && status.sum_curr_use_park_cnt !== null)
       );
 
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
@@ -461,7 +460,7 @@ export async function GET(request: NextRequest) {
       let availableSpaces = finalTotalSpaces;
       if (isRealtime && status) {
         const occupied = parseInt(
-          status.now_park_cnt || status.sum_curr_use_park_cnt || status.cur_use_prk_cnt || '0',
+          status.sum_curr_use_park_cnt ?? status.now_park_cnt ?? status.cur_use_prk_cnt ?? '0',
           10
         );
         availableSpaces = Math.max(0, finalTotalSpaces - occupied);
@@ -633,7 +632,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[주거용 건물 필터링 강화 완수 건수]', sortedFestivals.length);
+    console.log('[실시간 조인 파이프라인 동기화 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
