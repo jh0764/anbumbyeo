@@ -24,7 +24,7 @@ function getRegionFromAddress(address: string, lat: number, lng: number): Region
   if (address.includes('대전') || address.includes('유성')) {
     return '대전';
   }
-  if (address.includes('서울')) {
+  if (address.includes('서울') || address.includes('성수') || address.includes('연무장') || address.includes('성동구') || address.includes('종로') || address.includes('마포') || address.includes('강남')) {
     return '서울';
   }
   if (address.includes('경기') || address.includes('인천') || address.includes('수원') || address.includes('구리')) {
@@ -82,7 +82,7 @@ function isPublicParkingDiv(info: any): boolean {
   if (divName.includes('민영')) {
     return false;
   }
-  if (divName.includes('공영') || divName.includes('부설') || divName.includes('노외') || rawName.includes('공영') || rawName.includes('벡스코') || rawName.includes('BEXCO') || rawName.includes('전시장') || rawName.includes('컨벤션') || rawName.includes('경기장') || rawName.includes('체육관') || rawName.includes('전망대') || rawName.includes('황령산') || rawName.includes('봉수대') || rawName.includes('쉼터')) {
+  if (divName.includes('공영') || divName.includes('부설') || divName.includes('노외') || rawName.includes('공영') || rawName.includes('성수') || rawName.includes('성동') || rawName.includes('벡스코') || rawName.includes('BEXCO') || rawName.includes('전시장') || rawName.includes('컨벤션') || rawName.includes('경기장') || rawName.includes('체육관') || rawName.includes('전망대') || rawName.includes('황령산') || rawName.includes('봉수대') || rawName.includes('쉼터')) {
     return true;
   }
   return false;
@@ -220,14 +220,39 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. 통합 주차장 기본정보 수집
-    const targetCodes = ['26350', '26500', '26530', '26230', '26290', '26470', '11110', '11140', '42150', '44770'];
+    // 3. 서울(11/성동구 11200 - 성수동) & 부산(26/해운대 26350/수영 26500) 등 광역 주차장 동적 스위칭 병렬 수집
+    const targetCenterLat = parseFloat(mapY);
+    const targetCenterLng = parseFloat(mapX);
+
+    const targetCodes = new Set<string>();
+
+    // 좌표 기반 동적 스위칭 (서울: 11 / 11200, 부산: 26 / 26500 등)
+    if (targetCenterLat > 37.3) {
+      // 서울·수도권
+      targetCodes.add('11'); // 서울특별시 전체
+      targetCodes.add('11200'); // 서울 성동구 (성수동 섬유기획전 연무장길)
+      targetCodes.add('11110'); // 서울 종로구
+      targetCodes.add('11140'); // 서울 중구
+      targetCodes.add('11440'); // 서울 마포구
+      targetCodes.add('11680'); // 서울 강남구
+      targetCodes.add('41110'); // 경기 수원
+    } else {
+      // 부산·경상권
+      targetCodes.add('26'); // 부산광역시 전체
+      targetCodes.add('26350'); // 부산 해운대구 (벡스코)
+      targetCodes.add('26500'); // 부산 수영구 (광안리)
+      targetCodes.add('26530'); // 부산 사상구 (삼락)
+      targetCodes.add('26230'); // 부산 부산진구 (서면)
+      targetCodes.add('26290'); // 부산 남구 (황령산)
+      targetCodes.add('26470'); // 부산 연제구
+    }
 
     let parkingInfoList: any[] = [];
     const parkingStatusMap = new Map<string, any>();
 
-    const fetchInfoPromises = targetCodes.map(async (code) => {
-      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
+    const fetchInfoPromises = Array.from(targetCodes).map(async (code) => {
+      const addrType = code.length === 2 ? 'SIGUNGU' : 'SIGUNGU';
+      const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=${addrType}`;
       try {
         const iRes = await fetch(infoUrl, {
           cache: 'no-store',
@@ -322,7 +347,6 @@ export async function GET(request: NextRequest) {
       const rawSource = String(info.souc_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      // 초소형 전기차 전용 충전 레코드(5면 이하, 한국환경공단)는 그룹 내에서 무시
       const isEVOnlyStation =
         (rawSource.includes('한국환경공단') || rawName.includes('충전기') || rawName.includes('충전소')) &&
         totalSpaces <= 5;
@@ -359,7 +383,8 @@ export async function GET(request: NextRequest) {
         cleanedName.includes('전시장') ||
         cleanedName.includes('컨벤션') ||
         cleanedName.includes('경기장') ||
-        cleanedName.includes('황령산');
+        cleanedName.includes('황령산') ||
+        cleanedName.includes('성수');
 
       if (totalSpaces < 10 && !isDirectVenueParking) continue;
 
@@ -368,10 +393,9 @@ export async function GET(request: NextRequest) {
       const status = parkingStatusMap.get(code);
       const isRealtime = Boolean(status);
 
-      // 벡스코 본관/신관 대형 부설 주차장 (2,400면 규모)
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? 2400
-        : (totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 500));
+        : (totalSpaces > 0 ? totalSpaces : (status?.sum_park_cnt ? parseInt(status.sum_park_cnt, 10) : 100));
 
       let availableSpaces = finalTotalSpaces;
       if (status) {
@@ -402,7 +426,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 6. 벡스코 축제 및 대형 전시장 직속 주차장 1순위 최우선 고정 정렬
+    // 6. 성수동 섬유기획전 및 전국 축제별 주변 주차장 매핑
     const resultFestivals: Festival[] = rawList
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -457,6 +481,8 @@ export async function GET(request: NextRequest) {
               p.name.includes('봉수대') ||
               p.name.includes('전망대') ||
               p.name.includes('쉼터') ||
+              p.name.includes('성수') ||
+              p.name.includes('연무장') ||
               p.name.includes('광안') ||
               p.name.includes('민락') ||
               p.name.includes('해운대') ||
@@ -466,7 +492,7 @@ export async function GET(request: NextRequest) {
             let priorityScore = distM;
             if (isDirectVenueMatch) {
               priorityScore = distM - 10000;
-            } else if (distM <= 200 || isGenericDirectMatch) {
+            } else if (distM <= 300 || isGenericDirectMatch) {
               priorityScore = distM - 3000;
             }
 
@@ -543,7 +569,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[동일 시설 그룹화 & 대형 일반 주차장 최우선 바인딩 완수 건수]', sortedFestivals.length);
+    console.log('[서울 성수동 및 부산지역 동적 스위칭 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
