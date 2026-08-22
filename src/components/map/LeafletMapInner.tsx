@@ -347,9 +347,9 @@ export default function LeafletMapInner({
                     <div className="text-[11px] text-indigo-700 font-extrabold my-1 flex items-center justify-between">
                       <span>{parking.distance}</span>
                       <span>
-                        {parking.isRealtime
-                          ? `잔여 ${parking.availableSpaces}/${parking.totalSpaces}면`
-                          : `총 ${parking.totalSpaces}면`}
+                        {parking.isLive && parking.availableSpots !== undefined && parking.availableSpots !== null
+                          ? `잔여 ${parking.availableSpots}/${parking.totalSpaces}면`
+                          : `총 ${parking.totalSpaces}면 (현장확인)`}
                       </span>
                     </div>
 

@@ -19,18 +19,22 @@ export type FestivalStatusType = 'LIVE' | 'UPCOMING' | 'EXPIRED';
 export type StatusFilterType = 'LIVE' | 'UPCOMING';
 
 export interface Parking {
-  id: string;
+  id: string; // std_prl_cd 표준코드
   name: string;
   lat: number;
   lng: number;
   totalSpaces: number;
   availableSpaces: number;
+  availableSpots?: number | null;
+  currentParked?: number | null;
   distance: string; // 예: "도보 4분 (250m)"
   distanceMeters: number;
+  walkingMinutes?: number;
   address?: string;
-  isRealtime?: boolean;
+  isLive?: boolean; // 표준 실시간 제공 여부 (boolean)
+  isRealtime?: boolean; // 프론트 호환용
   isPublic?: boolean; // true: 공영, false: 민영
-  feeInfo?: string;  // 예: "10분당 500원" 또는 "무료"
+  feeInfo?: string; // 예: "10분당 500원" 또는 "무료"
 }
 
 export interface Festival {

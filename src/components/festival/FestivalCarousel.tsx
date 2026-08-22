@@ -173,12 +173,8 @@ export default function FestivalCarousel({
 
                           <div className="flex items-center gap-2 text-[10px] mt-0.5 flex-wrap">
                             <span className="font-extrabold text-indigo-900">
-                              {nearestParking.isRealtime ? (
-                                isNearestFull ? (
-                                  <span className="text-red-600 font-bold">만차 (0면)</span>
-                                ) : (
-                                  <span>잔여 {nearestParking.availableSpaces}/{nearestParking.totalSpaces}면</span>
-                                )
+                              {nearestParking.isLive && nearestParking.availableSpots !== undefined && nearestParking.availableSpots !== null ? (
+                                <span className="text-emerald-700 font-extrabold">잔여 {nearestParking.availableSpots}/{nearestParking.totalSpaces}면</span>
                               ) : (
                                 <span className="text-slate-600 font-bold">총 {nearestParking.totalSpaces}면 (현장확인)</span>
                               )}

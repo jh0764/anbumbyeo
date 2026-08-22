@@ -212,22 +212,13 @@ export default function FestivalBottomSheet({
 
                     {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 */}
                     <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                      {isRealtime ? (
-                        isFull ? (
-                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full border border-red-200 shrink-0">
-                            만차 (0/{parking.totalSpaces})
-                          </span>
-                        ) : isCrowded ? (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-200 shrink-0">
-                            혼잡 ({parking.availableSpaces}/{parking.totalSpaces})
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-semibold text-xs rounded-full border border-emerald-200 shrink-0">
-                            잔여 {parking.availableSpaces}/{parking.totalSpaces}면
-                          </span>
-                        )
+                      {parking.isLive && parking.availableSpots !== undefined && parking.availableSpots !== null ? (
+                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 font-semibold text-xs rounded-full border border-emerald-200 shrink-0 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          잔여 {parking.availableSpots}/{parking.totalSpaces}면
+                        </span>
                       ) : (
-                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-full border border-slate-200 shrink-0">
+                        <span className="px-2.5 py-1 bg-slate-100 text-slate-600 text-xs font-medium rounded-full border border-slate-200 shrink-0">
                           총 {parking.totalSpaces}면 (현장확인)
                         </span>
                       )}
