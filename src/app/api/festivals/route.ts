@@ -552,7 +552,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 7. 실시간 잔여석 바인딩 및 최종 결과 빌드
+    // 7. 실시간 잔여석 바인딩 및 엄격한 Null/Undefined Check (0면도 정상 실시간 인정)
     const resultFestivals: Festival[] = festivalCandidates.map(({ f, selected5Lots }, idx) => {
       const festLat = parseFloat(f.mapy);
       const festLng = parseFloat(f.mapx);
@@ -560,17 +560,18 @@ export async function GET(request: NextRequest) {
 
       const finalParkingLots: Parking[] = selected5Lots.map((p) => {
         const liveData = liveStatusMap.get(p.id);
-        const hasLive = Boolean(
-          liveData &&
-          liveData.sum_curr_use_park_cnt !== undefined &&
-          liveData.sum_curr_use_park_cnt !== null
-        );
+        const parkedCount = liveData?.sum_curr_use_park_cnt ?? liveData?.now_park_cnt ?? liveData?.cur_use_prk_cnt;
+
+        const isLiveValid =
+          parkedCount !== null &&
+          parkedCount !== undefined &&
+          String(parkedCount).trim() !== '';
 
         let availableSpaces = p.totalSpaces;
         let currentParked: number | null = null;
 
-        if (hasLive && liveData) {
-          currentParked = Number(liveData.sum_curr_use_park_cnt || 0);
+        if (isLiveValid) {
+          currentParked = Number(parkedCount);
           availableSpaces = Math.max(0, p.totalSpaces - currentParked);
         }
 
@@ -578,12 +579,13 @@ export async function GET(request: NextRequest) {
 
         return {
           ...p,
+          totalSpaces: p.totalSpaces,
           availableSpaces,
-          availableSpots: hasLive ? availableSpaces : null,
-          currentParked: hasLive ? currentParked : null,
+          availableSpots: isLiveValid ? availableSpaces : null,
+          currentParked: isLiveValid ? currentParked : null,
           walkingMinutes,
-          isLive: hasLive,
-          isRealtime: hasLive,
+          isLive: isLiveValid,
+          isRealtime: isLiveValid,
         };
       });
 
@@ -640,7 +642,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[std_prl_cd 핀포인트 1:1 병렬 실시간 조인 파이프라인 완수 건수]', sortedFestivals.length);
+    console.log('[Falsy(0) 체크 버그 엄격 수정 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
