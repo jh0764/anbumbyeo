@@ -19,6 +19,7 @@ const SIGUNGU_CODE_MAP: Record<string, string> = {
   '강남구': '11680', '영등포구': '11560', '용산구': '11170', '성북구': '11290',
   '강서구': '11500', '송파구': '11710', '서초구': '11650', '관악구': '11620',
   '동대문구': '11230', '서대문구': '11410', '동작구': '11590', '은평구': '11380',
+  '광진구': '11215',
   // 부산
   '수영구': '26500', '해운대구': '26350', '사상구': '26530', '부산진구': '26230',
   '남구': '26290', '연제구': '26470', '동래구': '26260', '금정구': '26410',
@@ -383,7 +384,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 5. 부적격 주차장 (아파트/빌라/맨션) 엄격 배제 & std_prl_cd In-Memory 1:1 Join
+    // 5. 주거용 시설 브랜드/건물 키워드 엄격 배제 & std_prl_cd In-Memory 1:1 Join
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -396,7 +397,8 @@ export async function GET(request: NextRequest) {
       const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
 
-      const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠/i;
+      // [주거용 브랜드/건물 키워드 100% 배제]
+      const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠|래미안|자이|푸르지오|힐스테이트|아이파크|더샵|e편한세상|롯데캐슬|SK뷰|SKVIEW|호반|베르디움|중흥|카이저|포레스트/i;
       if (residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr)) {
         continue;
       }
@@ -631,7 +633,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[std_prl_cd In-Memory 1:1 Join & 아파트 필터링 완수 건수]', sortedFestivals.length);
+    console.log('[주거용 건물 필터링 강화 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
