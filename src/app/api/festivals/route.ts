@@ -289,7 +289,7 @@ export async function GET(request: NextRequest) {
     sigunguCodesToQuery.add('11110'); // 종로구 (세종로)
     sigunguCodesToQuery.add('11440'); // 마포구 (서울프린지)
     sigunguCodesToQuery.add('11200'); // 성동구 (성수동)
-    sigunguCodesToQuery.add('11140'); // 서울 중구
+    sigunguCodesToQuery.add('11140'); // 서울 중구 (서울시청, 한화생명, 프레지던트호텔)
     sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
     sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
     sigunguCodesToQuery.add('26530'); // 사상구 (삼락)
@@ -360,7 +360,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 주거용 건물 배제 & 후보군 그룹화
+    // 4. [초소형 1면~5면 원천 배제] & 주거용 건물 배제 & 후보군 그룹화
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -372,6 +372,18 @@ export async function GET(request: NextRequest) {
       const rawSource = String(info.souc_nm || '');
       const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
       const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10);
+
+      // [엄격 적용: 1면~5면 초소형 노면/장애인/전기차 전용 배제]
+      const cleanedNameTemp = cleanParkingName(rawName);
+      const isDirectVenueParkingTemp =
+        cleanedNameTemp.includes('벡스코') ||
+        cleanedNameTemp.includes('BEXCO') ||
+        cleanedNameTemp.includes('전시장') ||
+        cleanedNameTemp.includes('컨벤션');
+
+      if (totalSpaces < 6 && !isDirectVenueParkingTemp) {
+        continue;
+      }
 
       const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠|래미안|자이|푸르지오|힐스테이트|아이파크|더샵|e편한세상|롯데캐슬|SK뷰|SKVIEW|호반|베르디움|중흥|카이저|포레스트/i;
       if (residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr)) {
@@ -454,7 +466,7 @@ export async function GET(request: NextRequest) {
         cleanedName.includes('신설동') ||
         cleanedName.includes('봉천복개');
 
-      if (totalSpaces < 10 && !isDirectVenueParking) continue;
+      if (totalSpaces < 6 && !isDirectVenueParking) continue;
 
       const isPublic = isStrictPublicParking(info);
       const code = String(info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`).trim();
@@ -475,8 +487,8 @@ export async function GET(request: NextRequest) {
         availableSpaces = Math.max(0, finalTotalSpaces - currentParked);
       }
 
-      if (cleanedName.includes('신설동') || cleanedName.includes('봉천복개') || cleanedName.includes('마포구청') || cleanedName.includes('월드컵공원')) {
-        console.log(`[Parking Join] ${cleanedName} (코드: ${code}) 매칭 성공: ${isLiveValid}, 현재입차: ${rawParked}, 잔여: ${availableSpaces}면`);
+      if (cleanedName.includes('신설동') || cleanedName.includes('봉천복개') || cleanedName.includes('한화생명') || cleanedName.includes('프레지던트') || cleanedName.includes('메리츠')) {
+        console.log(`[Parking Join] ${cleanedName} (코드: ${code}) 매칭 성공: ${isLiveValid}, 총면수: ${finalTotalSpaces}, 잔여: ${availableSpaces}면`);
       }
 
       const feeInfo = parseFeeInfoFromApi(info, isPublic);
@@ -674,7 +686,7 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
-    console.log('[Parking Join 검증 완수 건수]', sortedFestivals.length);
+    console.log('[6면 미만 배제 필터링 강화 완수 건수]', sortedFestivals.length);
 
     return NextResponse.json({
       success: true,
