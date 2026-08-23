@@ -41,6 +41,7 @@ export default function Home() {
   const loadFestivals = useCallback(async (cat: CategoryType, reg: Region, overrideCoords?: { mapX: number; mapY: number }) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setSelectedFestivalId(null);
     try {
       const coords = overrideCoords
         ? { mapX: overrideCoords.mapX.toString(), mapY: overrideCoords.mapY.toString() }
@@ -56,8 +57,8 @@ export default function Home() {
 
       if (data && Array.isArray(data)) {
         setFestivals(data);
-        if (data.length === 0) {
-          setErrorMessage(null); // 정상 응답이지만 결과 없음 — 에러 아님
+        if (data.length > 0) {
+          setSelectedFestivalId(data[0].id);
         }
       }
     } catch (err) {
@@ -118,18 +119,13 @@ export default function Home() {
 
   // 진행 중 축제가 0건이고 '축제' 카테고일 때만 UPCOMING 자동 전환
   useEffect(() => {
-    if (!isLoading && festivals.length > 0 && selectedCategory === '축제') {
-      if (liveCount === 0 && upcomingCount > 0 && selectedStatus === 'LIVE') {
-        setSelectedStatus('UPCOMING');
-        setAutoSwitchedToUpcoming(true);
-      } else if (liveCount > 0 && autoSwitchedToUpcoming) {
-        setAutoSwitchedToUpcoming(false);
-      }
-    } else {
-      setAutoSwitchedToUpcoming(false);
+    if (selectedCategory === '축제' && liveCount === 0 && upcomingCount > 0 && selectedStatus === 'LIVE') {
+      setSelectedStatus('UPCOMING');
+      setAutoSwitchedToUpcoming(true);
     }
-  }, [isLoading, festivals.length, liveCount, upcomingCount, selectedStatus, selectedCategory, autoSwitchedToUpcoming]);
+  }, [selectedCategory, liveCount, upcomingCount, selectedStatus]);
 
+  // 선택된 축제 객체
   const selectedFestival = useMemo(() => {
     if (!selectedFestivalId) return null;
     return festivals.find((f) => f.id === selectedFestivalId) || null;
@@ -143,16 +139,20 @@ export default function Home() {
         <RegionFilter
           selectedRegion={selectedRegion}
           onSelectRegion={(reg) => {
+            if (reg === selectedRegion) return;
             setSelectedRegion(reg);
             setSelectedFestivalId(null);
+            setFestivals([]);
             setAutoSwitchedToUpcoming(false);
           }}
         />
         <CategoryFilter
           selectedCategory={selectedCategory}
           onSelectCategory={(cat) => {
+            if (cat === selectedCategory) return;
             setSelectedCategory(cat);
             setSelectedFestivalId(null);
+            setFestivals([]);
             setAutoSwitchedToUpcoming(false);
           }}
         />
@@ -220,9 +220,10 @@ export default function Home() {
         )}
 
         {/* 지도 하단 오버레이 가로 축제 카드 캐러셀 */}
-        {!isLoading && bottomSheetMode === 'collapsed' && (
+        {!isLoading && bottomSheetMode === 'collapsed' && displayFestivals.length > 0 && (
           <div className="absolute bottom-4 left-0 right-0 z-10">
             <FestivalCarousel
+              key={`${selectedRegion}-${selectedCategory}-${selectedStatus}`}
               festivals={displayFestivals}
               selectedFestivalId={selectedFestivalId}
               onSelectFestival={(id) => setSelectedFestivalId(id)}

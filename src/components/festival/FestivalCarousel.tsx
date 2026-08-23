@@ -23,6 +23,12 @@ export default function FestivalCarousel({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = 0;
+    }
+  }, [festivals]);
+
+  useEffect(() => {
     if (!containerRef.current || !selectedFestivalId) return;
     const selectedCard = containerRef.current.querySelector(
       `[data-festival-id="${selectedFestivalId}"]`

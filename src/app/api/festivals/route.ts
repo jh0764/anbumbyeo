@@ -636,17 +636,17 @@ export async function GET(request: NextRequest) {
 
     const rawCandidateList = Array.from(facilityGroupMap.values());
 
-    // 4-1. [전국 실시간 연동] 선별된 후보 주차장(최대 40개)에 대해 실시간 잔여석 API 핀포인트 병렬 조회
+    // 4-1. [전국 실시간 연동] 선별된 후보 주차장에 대해 실시간 잔여석 API 핀포인트 병렬 조회
     const candidateLotsToQueryStatus = rawCandidateList
       .filter((info) => {
         const total = info.parsedTotal || 0;
         return total >= 10 || isStrictPublicParking(info);
       })
-      .slice(0, 40);
+      .slice(0, 100);
 
     await Promise.allSettled(
       candidateLotsToQueryStatus.map(async (info) => {
-        const code = String(info.std_prl_cd || info.std_prk_mg_no || '').trim();
+        const code = String(info.std_prl_cd || info.std_prk_mg_no || info.std_prk_cd || '').trim();
         if (!code) return;
         try {
           const sRes = await fetch(`${PARKING_STATUS_API_URL}?std_prl_cd=${code}`, {
@@ -659,6 +659,9 @@ export async function GET(request: NextRequest) {
           const sData = sJson?.data?.[0];
           if (sData) {
             liveMap.set(code, sData);
+            if (sData.std_prl_cd) liveMap.set(String(sData.std_prl_cd).trim(), sData);
+            if (sData.std_prk_mg_no) liveMap.set(String(sData.std_prk_mg_no).trim(), sData);
+            if (sData.std_prk_cd) liveMap.set(String(sData.std_prk_cd).trim(), sData);
           }
         } catch {
           // 실시간 조회 실패 시 안전하게 기본 정보로 Fallback
@@ -674,11 +677,25 @@ export async function GET(request: NextRequest) {
       const cleanedName = info.primaryName || cleanParkingName(rawName);
       const totalSpaces = info.parsedTotal || 0;
       const isPublic = isStrictPublicParking(info);
-      const code = String(info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`).trim();
+      const code = String(info.std_prl_cd || info.std_prk_mg_no || info.std_prk_cd || `prk-${Math.random()}`).trim();
 
-      const liveData = liveMap.get(code);
-      const rawParked = liveData?.sum_curr_use_park_cnt ?? liveData?.now_park_cnt ?? liveData?.cur_use_prk_cnt;
-      const isLiveValid = rawParked !== null && rawParked !== undefined && String(rawParked).trim() !== '';
+      const liveData =
+        liveMap.get(code) ||
+        (info.std_prl_cd ? liveMap.get(String(info.std_prl_cd).trim()) : null) ||
+        (info.std_prk_mg_no ? liveMap.get(String(info.std_prk_mg_no).trim()) : null) ||
+        (info.std_prk_cd ? liveMap.get(String(info.std_prk_cd).trim()) : null);
+
+      const rawParked =
+        liveData?.sum_curr_use_park_cnt ??
+        liveData?.now_park_cnt ??
+        liveData?.cur_use_prk_cnt ??
+        liveData?.curr_use_gnr_park_cnt;
+
+      const isLiveValid =
+        rawParked !== null &&
+        rawParked !== undefined &&
+        String(rawParked).trim() !== '' &&
+        !isNaN(Number(rawParked));
 
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? 2400
