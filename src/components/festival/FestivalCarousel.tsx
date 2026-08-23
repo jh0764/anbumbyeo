@@ -218,6 +218,20 @@ export default function FestivalCarousel({
                               <span>{nearestParking.feeInfo || '현장 요금제'}</span>
                             </span>
                           </div>
+
+                          {nearestParking.address && (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onCopyAddress) onCopyAddress(nearestParking.address!);
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer mt-0.5 truncate flex items-center gap-1"
+                              title="주차장 주소 복사"
+                            >
+                              <Copy className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{nearestParking.address}</span>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="text-xs font-medium text-slate-400 h-full flex items-center">

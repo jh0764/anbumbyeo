@@ -1,15 +1,16 @@
 import React from 'react';
+import { Parking } from '@/types';
 
-export function isParkingLive(parking: any): boolean {
+export function isParkingLive(parking?: Partial<Parking> | null): boolean {
   if (!parking) return false;
   return Boolean(
     parking.isLive === true ||
     parking.isRealtime === true ||
-    parking.park_crst_info_prvd_yn === 'Y'
+    (parking as Record<string, unknown>).park_crst_info_prvd_yn === 'Y'
   );
 }
 
-export function getParkingAvailableSpots(parking: any): number | null {
+export function getParkingAvailableSpots(parking?: Partial<Parking> | null): number | null {
   if (!parking) return null;
   const avail = parking.availableSpots ?? parking.availableSpaces;
   if (avail !== null && avail !== undefined && String(avail).trim() !== '' && !isNaN(Number(avail))) {
@@ -18,12 +19,12 @@ export function getParkingAvailableSpots(parking: any): number | null {
   return null;
 }
 
-export function renderParkingBadge(parking: any) {
+export function renderParkingBadge(parking?: Partial<Parking> | null) {
   if (!parking) return null;
 
   const isLive = isParkingLive(parking);
   const available = getParkingAvailableSpots(parking);
-  const total = Number(parking.totalSpaces ?? parking.sum_park_cnt ?? 0);
+  const total = Number(parking.totalSpaces ?? (parking as Record<string, unknown>).sum_park_cnt ?? 0);
 
   if (isLive && available !== null) {
     if (available === 0) {

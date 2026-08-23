@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Festival, Parking, Region } from '@/types';
 import { renderParkingBadge } from '@/lib/parkingUtils';
-import { Plus, Minus, Search, RefreshCw, Car, Tag } from 'lucide-react';
+import { Plus, Minus, Search, RefreshCw, Tag } from 'lucide-react';
 
 interface LeafletMapInnerProps {
   festivals: Festival[];
@@ -169,7 +169,7 @@ function MapEventsController({
     zoomend: () => {
       setShowSearchBtn(true);
     },
-    click: (e) => {
+    click: () => {
       // 지도의 빈 배경 터치 시 선택 해제
       if (onMapClick) {
         onMapClick();
@@ -249,12 +249,13 @@ export default function LeafletMapInner({
   onSelectFestival,
   onSearchArea,
 }: LeafletMapInnerProps) {
+  // ID 중복 방지 (React key 중복 방어)
   const uniqueFestivals = useMemo(() => {
     const seen = new Set<string>();
     return festivals.filter((f) => {
-      const key = `${f.id}-${f.lat.toFixed(4)}-${f.lng.toFixed(4)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (!f || !f.id || isNaN(f.lat) || isNaN(f.lng)) return false;
+      if (seen.has(f.id)) return false;
+      seen.add(f.id);
       return true;
     });
   }, [festivals]);
@@ -264,12 +265,10 @@ export default function LeafletMapInner({
     return uniqueFestivals.find((f) => f.id === selectedFestivalId) || null;
   }, [uniqueFestivals, selectedFestivalId]);
 
-  const initialCenter = useMemo(() => {
+  const defaultCenter = useMemo(() => {
     const cam = REGION_CAMERA[selectedRegion] || REGION_CAMERA['서울'];
     return [cam.lat, cam.lng] as [number, number];
   }, [selectedRegion]);
-
-  const defaultCenter = useRef<[number, number]>(initialCenter).current;
 
   // selectedFestival 활성화 시에만 도보 1km 이내 공영/민영 주차장 렌더링
   const displayParkingLots = useMemo(() => {
@@ -321,7 +320,7 @@ export default function LeafletMapInner({
               icon={createFestivalIcon(fest, isSelected)}
               eventHandlers={{
                 click: (e) => {
-                  L.DomEvent.stopPropagation(e as any);
+                  L.DomEvent.stopPropagation(e as unknown as L.LeafletEvent);
                   onSelectFestival(fest.id);
                 },
               }}
@@ -341,7 +340,7 @@ export default function LeafletMapInner({
                 icon={createParkingIcon(parking)}
                 eventHandlers={{
                   click: (e) => {
-                    L.DomEvent.stopPropagation(e as any);
+                    L.DomEvent.stopPropagation(e as unknown as L.LeafletEvent);
                   },
                 }}
               >

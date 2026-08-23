@@ -22,7 +22,7 @@ const WEATHER_API_URL =
 const apiCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 1000;
 
-function getWeatherEmoji(desc: string, id?: number): string {
+function getWeatherEmoji(desc: string): string {
   const d = desc.toLowerCase();
   if (d.includes('맑음') || d.includes('clear')) return '☀️';
   if (d.includes('구름조금') || d.includes('few') || d.includes('scattered')) return '⛅';
@@ -52,7 +52,7 @@ async function fetchWeatherForCoords(lat: number, lng: number, apiKey: string) {
     const temp = Math.round(Number(main.temp) || 0);
     const feelsLike = Math.round(Number(main.feels_like) || temp);
     const humidity = Math.round(Number(main.humidity) || 0);
-    const emoji = getWeatherEmoji(desc, weatherItem.id);
+    const emoji = getWeatherEmoji(desc);
 
     return {
       description: desc,
@@ -476,6 +476,7 @@ export async function GET(request: NextRequest) {
 
     const tourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
     const parkingApiKey = process.env.PARKING_API_KEY || tourApiKey;
+    const weatherApiKey = process.env.WEATHER_API_KEY || parkingApiKey || tourApiKey;
     const apiKeyHeader = tourApiKey || parkingApiKey;
 
     if (!apiKeyHeader) {
@@ -615,7 +616,7 @@ export async function GET(request: NextRequest) {
     }
     sigunguCodesToQuery.add(getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng));
 
-    let parkingInfoList: any[] = [];
+    const parkingInfoList: any[] = [];
     const liveMap = new Map<string, any>();
 
     // API 1: 기본정보 수신 (동적 추출된 시군구 병렬 수신, 3초 타임아웃 방어)
@@ -747,7 +748,7 @@ export async function GET(request: NextRequest) {
 
     await Promise.allSettled(
       uniqueWeatherCoords.slice(0, 15).map(async ({ key, lat, lng }) => {
-        const wInfo = await fetchWeatherForCoords(lat, lng, apiKeyHeader);
+        const wInfo = await fetchWeatherForCoords(lat, lng, weatherApiKey);
         if (wInfo) {
           weatherMap.set(key, wInfo);
         }

@@ -81,6 +81,16 @@ export default function Home() {
 
       if (data && Array.isArray(data)) {
         setFestivals(data);
+        if (cat === '축제') {
+          const lCount = data.filter((f) => getFestivalStatus(f) === 'LIVE').length;
+          const uCount = data.filter((f) => getFestivalStatus(f) === 'UPCOMING').length;
+          if (lCount === 0 && uCount > 0) {
+            setSelectedStatus('UPCOMING');
+            setAutoSwitchedToUpcoming(true);
+          } else {
+            setAutoSwitchedToUpcoming(false);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load festivals from API:', err);
@@ -135,20 +145,12 @@ export default function Home() {
       upcomingCount: uCount,
       filteredFestivals: finalFiltered,
     };
-  }, [festivals, selectedCategory, selectedStatus]);
+  }, [festivals, selectedCategory, selectedStatus, selectedRegion]);
 
   // 지도 마커 슬라이싱 (최대 15개)
   const displayFestivals = useMemo(() => {
     return filteredFestivals.slice(0, 15);
   }, [filteredFestivals]);
-
-  // 진행 중 축제가 0건이고 '축제' 카테고일 때만 UPCOMING 자동 전환
-  useEffect(() => {
-    if (selectedCategory === '축제' && liveCount === 0 && upcomingCount > 0 && selectedStatus === 'LIVE') {
-      setSelectedStatus('UPCOMING');
-      setAutoSwitchedToUpcoming(true);
-    }
-  }, [selectedCategory, liveCount, upcomingCount, selectedStatus]);
 
   // 선택된 축제 객체
   const selectedFestival = useMemo(() => {

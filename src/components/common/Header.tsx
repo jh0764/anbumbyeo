@@ -1,12 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 
 import BrandLogo from './BrandLogo';
 
 export default function Header() {
-  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [lastUpdated, setLastUpdated] = useState<string>(() => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes} 기준`;
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const updateTime = () => {
@@ -15,10 +20,6 @@ export default function Header() {
     const minutes = String(now.getMinutes()).padStart(2, '0');
     setLastUpdated(`${hours}:${minutes} 기준`);
   };
-
-  useEffect(() => {
-    updateTime();
-  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
