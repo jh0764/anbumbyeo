@@ -436,7 +436,7 @@ export async function GET(request: NextRequest) {
       // --- [1단계] 전기차 충전 전용 주차장 배제 (면수와 무관하게 먼저 확인) ---
       const evKeywords = /충전기|충전소|전기차|EV충전|전기자동차/i;
       const isEVOnly =
-        rawSource.includes('한국환경공단') ||
+        (rawSource.includes('한국환경공단') && evKeywords.test(rawName)) ||
         (evKeywords.test(rawName) && totalSpaces <= 10);
       if (isEVOnly) continue;
 
