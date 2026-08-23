@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 
+import BrandLogo from './BrandLogo';
+
 export default function Header() {
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -26,10 +28,8 @@ export default function Header() {
 
   return (
     <header className="w-full pt-12 pb-3 px-4 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs shrink-0 z-20">
-      <div className="flex items-center gap-2">
-        <div className="w-6.5 h-6.5 rounded-lg bg-slate-900 flex items-center justify-center text-white font-black text-xs shadow-xs shrink-0 border border-slate-800">
-          P
-        </div>
+      <div className="flex items-center gap-2.5">
+        <BrandLogo className="w-8 h-8 shrink-0" size={32} />
         <div className="flex flex-col justify-center">
           <h1 className="text-lg font-black text-slate-900 tracking-tight leading-none flex items-center gap-1.5">
             안붐벼
