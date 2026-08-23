@@ -31,7 +31,7 @@ export default function Header() {
       <div className="flex items-center gap-2.5">
         <BrandLogo className="w-8 h-8 shrink-0" size={32} />
         <div className="flex flex-col justify-center">
-          <h1 className="text-lg font-black text-slate-900 tracking-tight leading-none flex items-center gap-1.5">
+          <h1 className="text-lg font-aggro text-slate-900 tracking-tight leading-none flex items-center gap-1.5">
             안붐벼
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
           </h1>
