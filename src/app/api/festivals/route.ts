@@ -281,17 +281,28 @@ function getCategoryTypeFromContentTypeId(contentTypeId?: string): CategoryType 
 function cleanParkingName(name: string): string {
   if (!name) return '주차장';
   return name
+    .replace(/^(서울|경기|부산|대구|인천|광주|대전|울산|강원|충북|충남|전북|전남|경북|경남|제주)(종로|중구|용산|성동|광진|동대문|중랑|성북|강북|도봉|노원|은평|서대문|마포|양천|강서|구로|금천|영등포|동작|관악|서초|강남|송파|강동|수원|성남|고양|용인|부천|안산|안양|남양주|화성|평택|의정부|시흥|파주|광명|김포|군포|광주|이천|양주|오산|구리|안성|포천|의왕|하남|여주|동두천|과천|가평|양평|연천|해운대|부산진|동래|사하|금정|연제|수영|사상|기장|수성|달서|달성|미추홀|연수|남동|부평|계양|강화|옹진|광산|유성|대덕|울주|춘천|원주|강릉|동해|속초|삼척|홍천|횡성|영월|평창|정선|철원|화천|양구|인제|고성|양양|청주|충주|제천|보은|옥천|영동|증평|진천|괴산|음성|단양|천안|공주|보령|아산|서산|논산|계룡|당진|금산|부여|서천|청양|홍성|예산|태안|전주|군산|익산|정읍|남원|김제|완주|진안|무주|장수|임실|순창|고창|부안|목포|여수|순천|나주|광양|담양|곡성|구례|고흥|보성|화순|장흥|강진|해남|영암|무안|함평|영광|장성|완도|진도|신안|포항|경주|김천|안동|구미|영주|영천|상주|문경|경산|의성|청송|영양|영덕|청도|고령|성주|칠곡|예천|봉화|울진|울릉|창원|진주|통영|사천|김해|밀양|거제|양산|의령|함안|창녕|남해|하동|산청|함양|거창|합천|서귀포)\s*/i, '')
     .replace(/\(구\)|\(시\)|\(도\)|\(군\)|완속충전기|급속충전기|\[전기차충전소\]|\[공영\]|\[민영\]/gi, '')
+    .replace(/[\d\-_]+$/, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function getNormalizedGroupKey(name: string, lat: number, lng: number): string {
-  const baseName = name
-    .replace(/\(구\)|\(시\)|\(도\)|\(군\)|완속충전기|급속충전기|\[전기차충전소\]|\[공영\]|\[민영\]/gi, '')
-    .replace(/\s+/g, '')
+function getNormalizedFacilityKey(name: string, addr: string, lat: number, lng: number): string {
+  const baseName = cleanParkingName(name)
+    .replace(/[\s\(\)\[\]\-_]/g, '')
     .toLowerCase();
-  return `${baseName}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+
+  const cleanAddr = (addr || '')
+    .replace(/^(서울특별시|경기도|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|강원특별자치도|강원도|충청북도|충청남도|전북특별자치도|전라북도|전라남도|경상북도|경상남도|제주특별자치도|제주도)\s*/i, '')
+    .replace(/[\s\-_]/g, '')
+    .toLowerCase();
+
+  if (cleanAddr && cleanAddr.length > 5) {
+    return `addr_${cleanAddr}_${baseName}`;
+  }
+
+  return `loc_${baseName}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
 }
 
 function isEVOnlyRecord(info: any): boolean {
@@ -302,7 +313,7 @@ function isEVOnlyRecord(info: any): boolean {
   const total = Math.max(numSum, numGnr);
 
   // 1. 명칭/구분에 전기차 충전기/전용 시설 명시
-  const evKeywords = /완속충전기|급속충전기|전기차충전소|전기자동차충전소|EV충전소|EV충전기|\[전기차\]|차지비|에스트래픽|대영채비|파워큐브|플러그링크/i;
+  const evKeywords = /완속충전기|급속충전기|전기차충전소|전기자동차충전소|EV충전소|EV충전기|\[전기차\]|차지비|에스트래픽|대영채비|파워큐브|플러그링크|차징스테이션|차징|스테이션|charging/i;
   if (evKeywords.test(rawName) || evKeywords.test(rawDiv)) return true;
 
   // 2. 기둥 번호, 층수 표기 등 개별 충전기 설치 위치 표기된 레코드
@@ -611,7 +622,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. 주차장 데이터 필터링 (전기차/장애인/주거지 배제 및 그룹화)
+    // 4. 주차장 데이터 필터링 (전기차/장애인/주거지 배제 및 대표 시설 그룹화)
     const facilityGroupMap = new Map<string, any>();
 
     for (const info of parkingInfoList) {
@@ -620,6 +631,7 @@ export async function GET(request: NextRequest) {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
       const rawName = String(info.prl_nm || info.prk_nm || '');
+      const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
       const numSum = parseInt(info.sum_park_cnt || '0', 10) || 0;
       const numGnr = parseInt(info.gnr_park_cnt || '0', 10) || 0;
       const totalSpaces = Math.max(numSum, numGnr);
@@ -630,28 +642,23 @@ export async function GET(request: NextRequest) {
       // --- [2단계] 장애인 전용 주차구역 식별 및 배제 ---
       if (isDisabledOnlyRecord(info)) continue;
 
-      // --- [3단계] 주거지(아파트/빌라 등) 부설 주차장 배제 ---
+      // --- [3단계] 주거지(아파트/빌라 등) 부설 및 거주자 전용 구역 배제 ---
       if (isResidentialRecord(info)) continue;
 
-      // --- [4단계] 일반 차량 진입 불가능한 초소형(1~2면) 비공영 노면 배제 ---
-      if (totalSpaces > 0 && totalSpaces < 3) {
-        const isMun = /공영|구립|시립|환승/i.test(rawName);
-        if (!isMun) continue;
-      }
-
-      // --- [5단계] 중복 시설 그룹핑 (정규화 명칭 + 근접 좌표 기준, 전체 일반면수 큰 레코드 우선) ---
+      // --- [4단계] 동일 시설 중복 제거 (주소/명칭 접두사 기반, 전체 면수가 가장 큰 본체 주차장 채택) ---
       const cleanedName = cleanParkingName(rawName);
       const groupKey = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? '벡스코_GROUP'
-        : getNormalizedGroupKey(cleanedName, lat, lng);
+        : getNormalizedFacilityKey(rawName, rawAddr, lat, lng);
 
       const existing = facilityGroupMap.get(groupKey);
       if (!existing) {
-        facilityGroupMap.set(groupKey, { ...info, parsedTotal: totalSpaces });
+        facilityGroupMap.set(groupKey, { ...info, parsedTotal: totalSpaces, primaryName: cleanedName });
       } else {
         const existingSpaces = existing.parsedTotal || 0;
+        // 면수가 더 큰 레코드의 정보를 우선 채택
         if (totalSpaces > existingSpaces) {
-          facilityGroupMap.set(groupKey, { ...info, parsedTotal: totalSpaces });
+          facilityGroupMap.set(groupKey, { ...info, parsedTotal: totalSpaces, primaryName: cleanedName });
         }
       }
     }
@@ -663,7 +670,7 @@ export async function GET(request: NextRequest) {
       const lat = parseFloat(info.la_val || info.lat || '0');
       const lng = parseFloat(info.lo_val || info.lng || '0');
       const rawName = String(info.prl_nm || info.prk_nm || '');
-      const cleanedName = cleanParkingName(rawName);
+      const cleanedName = info.primaryName || cleanParkingName(rawName);
       const totalSpaces = info.parsedTotal || 0;
       const isPublic = isStrictPublicParking(info);
       const code = String(info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`).trim();
@@ -675,6 +682,11 @@ export async function GET(request: NextRequest) {
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? 2400
         : (totalSpaces > 0 ? totalSpaces : 50);
+
+      // --- [5단계] 극소규모/전용 구역 최소 면수(10면 미만) 컷오프 ---
+      if (finalTotalSpaces < 10) {
+        continue;
+      }
 
       let currentParked: number | null = null;
       let availableSpaces = finalTotalSpaces;
@@ -792,12 +804,23 @@ export async function GET(request: NextRequest) {
           return distDiff;
         });
 
-      // 2단계 슬롯 조합 (최대 5개)
-      const finalParkingLots: Parking[] = [
+      // 2단계 슬롯 조합 (최대 5개, 동일 시설명 중복 방지)
+      const mergedCandidateLots = [
         ...directVenueParkings,
         ...liveParkings,
         ...fallbackParkings,
-      ].slice(0, 5);
+      ];
+
+      const finalParkingLots: Parking[] = [];
+      const seenFacilityNames = new Set<string>();
+
+      for (const p of mergedCandidateLots) {
+        const norm = p.name.replace(/[\s\(\)\[\]\-_]/g, '').toLowerCase();
+        if (seenFacilityNames.has(norm)) continue;
+        seenFacilityNames.add(norm);
+        finalParkingLots.push(p);
+        if (finalParkingLots.length >= 5) break;
+      }
 
       const { crowdLevel, crowdMessage } = calculateRealCrowdStatus(finalParkingLots);
       const region = getRegionFromAddress(festAddress, festLat, festLng);
