@@ -28,15 +28,16 @@ export default function Header() {
 
   return (
     <header className="w-full pt-12 pb-2.5 px-3.5 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs shrink-0 z-20">
-      <div className="flex items-center">
+      <div className="flex flex-col justify-center">
         <Image
           src="/logo.png"
           alt="안붐벼"
-          width={110}
-          height={35}
+          width={80}
+          height={26}
           priority
-          className="h-8 w-auto object-contain"
+          className="h-5.5 w-auto object-contain"
         />
+        <p className="text-[9px] text-slate-500 font-medium mt-0.5 tracking-tight">실시간 축제 밀집도 & 주차</p>
       </div>
 
       <div className="flex items-center gap-2">
