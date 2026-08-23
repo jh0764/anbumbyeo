@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 
+import Image from 'next/image';
+
 export default function Header() {
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -26,17 +28,15 @@ export default function Header() {
 
   return (
     <header className="w-full pt-12 pb-2.5 px-3.5 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs shrink-0 z-20">
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-xs">
-          안
-        </div>
-        <div>
-          <h1 className="text-sm font-extrabold text-slate-900 leading-none flex items-center gap-1">
-            안붐벼
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          </h1>
-          <p className="text-[9px] text-slate-500 font-medium mt-0.5">실시간 축제 밀집도 & 주차</p>
-        </div>
+      <div className="flex items-center">
+        <Image
+          src="/logo.png"
+          alt="안붐벼"
+          width={110}
+          height={35}
+          priority
+          className="h-8 w-auto object-contain"
+        />
       </div>
 
       <div className="flex items-center gap-2">
