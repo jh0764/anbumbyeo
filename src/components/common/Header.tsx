@@ -27,22 +27,24 @@ export default function Header() {
   };
 
   return (
-    <header className="w-full pt-12 pb-2.5 px-3.5 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs shrink-0 z-20">
+    <header className="w-full pt-12 pb-3 px-4 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between shadow-2xs shrink-0 z-20">
       <div className="flex flex-col justify-center">
         <Image
           src="/logo.png"
           alt="안붐벼"
-          width={80}
-          height={26}
+          width={72}
+          height={23}
           priority
-          className="h-5.5 w-auto object-contain"
+          className="h-[19px] w-auto object-contain"
         />
-        <p className="text-[9px] text-slate-500 font-medium mt-0.5 tracking-tight">실시간 축제 밀집도 & 주차</p>
+        <p className="text-[11px] text-slate-500 font-medium mt-1 pl-[5px] tracking-tight leading-none">
+          실시간 축제 밀집도 & 주차
+        </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         {/* 실시간 갱신 타임스탬프 */}
-        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/80">
+        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md border border-slate-200/80 leading-none">
           {lastUpdated || '실시간'}
         </span>
 
