@@ -23,32 +23,22 @@ export default function NavigationModal({
   if (!isOpen) return null;
 
   const handleLaunchNavi = (type: 'kakao' | 'tmap' | 'naver') => {
-    let deepLink = '';
-    let webFallback = '';
+    if (!lat || !lng) return;
+
+    const encodedName = encodeURIComponent(targetName);
 
     if (type === 'kakao') {
-      deepLink = `kakaonavi://navigate?name=${encodeURIComponent(targetName)}&x=${lng}&y=${lat}`;
-      webFallback = `https://map.kakao.com/link/to/${encodeURIComponent(targetName)},${lat},${lng}`;
+      // 1. 카카오맵 / 카카오내비 (모바일 앱 설치 시 자동 연동, 미설치 시 웹 길찾기)
+      const url = `https://map.kakao.com/link/to/${encodedName},${lat},${lng}`;
+      window.open(url, '_blank');
     } else if (type === 'tmap') {
-      deepLink = `tmap://route?goalname=${encodeURIComponent(targetName)}&goalx=${lng}&goaly=${lat}`;
-      webFallback = `https://map.kakao.com/link/search/${encodeURIComponent(targetName)}`;
+      // 2. 티맵 (TMAP) (모바일 웹/앱 통합 길찾기)
+      const url = `https://smap.tmap.co.kr/route.html?name=${encodedName}&lat=${lat}&lon=${lng}`;
+      window.open(url, '_blank');
     } else if (type === 'naver') {
-      deepLink = `nmap://navigation?dlat=${lat}&dlng=${lng}&dname=${encodeURIComponent(targetName)}&appname=com.anbumbyeo.app`;
-      webFallback = `https://map.naver.com/v5/directions/-/-/${lng},${lat},${encodeURIComponent(targetName)}`;
-    }
-
-    // 모바일 환경 딥링크 실행 + 웹 폴백 타이머
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile) {
-      const now = Date.now();
-      window.location.href = deepLink;
-      setTimeout(() => {
-        if (!document.hidden && Date.now() - now < 2000) {
-          window.open(webFallback, '_blank');
-        }
-      }, 1200);
-    } else {
-      window.open(webFallback, '_blank');
+      // 3. 네이버 지도 (네이버 지도 앱/웹 자동 감지 공식 링크)
+      const url = `https://map.naver.com/v5/directions/-/-/${lng},${lat},${encodedName}/-/car`;
+      window.open(url, '_blank');
     }
   };
 
