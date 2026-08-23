@@ -15,6 +15,57 @@ const PARKING_INFO_API_URL =
   'https://api.koreaconnect.kr/01/5/2606081732514722903DCP/LOGIS/api/v1/parking/info';
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
+const WEATHER_API_URL =
+  'https://api.koreaconnect.kr/01/1/2603111007183154866OWT/ENVIRO/data/2.5/weather';
+
+// 서버 60초 인메모리 캐시 (SWR / Memory Cache)
+const apiCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL_MS = 60 * 1000;
+
+function getWeatherEmoji(desc: string, id?: number): string {
+  const d = desc.toLowerCase();
+  if (d.includes('맑음') || d.includes('clear')) return '☀️';
+  if (d.includes('구름조금') || d.includes('few') || d.includes('scattered')) return '⛅';
+  if (d.includes('튼구름') || d.includes('흐림') || d.includes('구름') || d.includes('cloud') || d.includes('overcast')) return '☁️';
+  if (d.includes('비') || d.includes('소나기') || d.includes('rain') || d.includes('drizzle')) return '🌧️';
+  if (d.includes('눈') || d.includes('snow')) return '❄️';
+  if (d.includes('뇌우') || d.includes('번개') || d.includes('thunder')) return '⚡';
+  if (d.includes('안개') || d.includes('박무') || d.includes('mist') || d.includes('fog') || d.includes('haze')) return '🌫️';
+  return '☀️';
+}
+
+async function fetchWeatherForCoords(lat: number, lng: number, apiKey: string) {
+  try {
+    const url = `${WEATHER_API_URL}?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&units=metric&lang=kr&mode=json`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: { api_user_key_id: apiKey, Accept: 'application/json' },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const weatherItem = json?.weather?.[0];
+    const main = json?.main;
+    if (!weatherItem || !main) return null;
+
+    const desc = weatherItem.description || '맑음';
+    const temp = Math.round(Number(main.temp) || 0);
+    const feelsLike = Math.round(Number(main.feels_like) || temp);
+    const humidity = Math.round(Number(main.humidity) || 0);
+    const emoji = getWeatherEmoji(desc, weatherItem.id);
+
+    return {
+      description: desc,
+      temp,
+      feelsLike,
+      humidity,
+      icon: weatherItem.icon,
+      emoji,
+    };
+  } catch {
+    return null;
+  }
+}
 
 // 전국 주요 시군구 5자리 법정동/행정구역 코드 사전 (구/군 단위 세부 코드 완벽 지원)
 const SIGUNGU_CODE_MAP: Record<string, string> = {
@@ -414,6 +465,14 @@ export async function GET(request: NextRequest) {
     const requestedContentTypeId = searchParams.get('contentTypeId');
     const categoryParam = searchParams.get('category');
     const requestedRegionParam = searchParams.get('region');
+    const radius = searchParams.get('radius') || '20000';
+
+    const cacheKey = `${categoryParam || ''}_${requestedRegionParam || ''}_${mapX}_${mapY}_${radius}`;
+    const nowMs = Date.now();
+    const cached = apiCache.get(cacheKey);
+    if (cached && nowMs - cached.timestamp < CACHE_TTL_MS) {
+      return NextResponse.json(cached.data);
+    }
 
     const tourApiKey = process.env.TOUR_API_KEY || process.env.NEXT_PUBLIC_TOUR_API_KEY || '';
     const parkingApiKey = process.env.PARKING_API_KEY || tourApiKey;
@@ -668,6 +727,33 @@ export async function GET(request: NextRequest) {
         }
       })
     );
+
+    // 4-2. [실시간 날씨 연동] 축제/명소 위치별 날씨 비동기 병렬 조회
+    const weatherMap = new Map<string, any>();
+    const uniqueWeatherCoords: { key: string; lat: number; lng: number }[] = [];
+    const seenWeatherCoords = new Set<string>();
+
+    for (const f of validFestivalsRaw) {
+      const fLat = parseFloat(f.mapy);
+      const fLng = parseFloat(f.mapx);
+      if (!isNaN(fLat) && !isNaN(fLng)) {
+        const coordKey = `${fLat.toFixed(2)}_${fLng.toFixed(2)}`;
+        if (!seenWeatherCoords.has(coordKey)) {
+          seenWeatherCoords.add(coordKey);
+          uniqueWeatherCoords.push({ key: coordKey, lat: fLat, lng: fLng });
+        }
+      }
+    }
+
+    await Promise.allSettled(
+      uniqueWeatherCoords.slice(0, 15).map(async ({ key, lat, lng }) => {
+        const wInfo = await fetchWeatherForCoords(lat, lng, apiKeyHeader);
+        if (wInfo) {
+          weatherMap.set(key, wInfo);
+        }
+      })
+    );
+
     const candidateParkingList: Parking[] = [];
 
     for (const info of rawCandidateList) {
@@ -763,37 +849,26 @@ export async function GET(request: NextRequest) {
           p.name.includes('해운대') ||
           p.name.includes('삼락') ||
           p.name.includes('신설동') ||
-          p.name.includes('봉천복개');
+          p.name.includes('봉천복개') ||
+          p.name.includes('앞산') ||
+          p.name.includes('수성못');
 
         let priorityScore = distM;
         if (isDirectVenueMatch) {
-          priorityScore = distM - 10000;
-        } else if (distM <= 300 || isGenericDirectMatch) {
-          priorityScore = distM - 3000;
+          priorityScore -= 50000;
+        } else if (isGenericDirectMatch && (festTitle.includes(p.name.slice(0, 3)) || festAddress.includes(p.name.slice(0, 3)))) {
+          priorityScore -= 20000;
         }
-
-        const walkingMinutes = Math.max(1, Math.round(distM / 80));
 
         return {
           ...p,
           distanceMeters: distM,
           distance: formatWalkingDistanceText(distM),
-          walkingMinutes,
           priorityScore,
         };
       });
 
-      // 반경 확장 Fallback (1km -> 2km -> 3km -> 5km -> 전체 최단거리 순)
-      let validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 1000);
-      if (validNearbyLots.length < 3) {
-        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 2000);
-      }
-      if (validNearbyLots.length < 3) {
-        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 3000);
-      }
-      if (validNearbyLots.length < 3) {
-        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 5000);
-      }
+      let validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 5000);
       // 주차장이 단 하나라도 관할구에 존재하면 100% Fallback 매핑 보장
       if (validNearbyLots.length === 0 && scoredLots.length > 0) {
         validNearbyLots = scoredLots.sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, 5);
@@ -878,6 +953,7 @@ export async function GET(request: NextRequest) {
         parkingLots: finalParkingLots,
         startNum: Number(rawStart),
         endNum: Number(rawEnd),
+        weather: weatherMap.get(`${festLat.toFixed(2)}_${festLng.toFixed(2)}`) || null,
       };
     });
 
@@ -910,10 +986,22 @@ export async function GET(request: NextRequest) {
         })
       : sortedFestivals;
 
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       data: finalFilteredFestivals,
-    });
+    };
+
+    // 캐시 저장 (최대 100개 항목 유지)
+    if (apiCache.size > 100) {
+      for (const [k, v] of apiCache.entries()) {
+        if (nowMs - v.timestamp >= CACHE_TTL_MS) {
+          apiCache.delete(k);
+        }
+      }
+    }
+    apiCache.set(cacheKey, { data: responsePayload, timestamp: Date.now() });
+
+    return NextResponse.json(responsePayload);
   } catch (error: any) {
     console.error('[API Exception] /api/festivals 예외:', error);
     return NextResponse.json({

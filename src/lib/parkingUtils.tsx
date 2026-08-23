@@ -35,6 +35,18 @@ export function renderParkingBadge(parking: any) {
       );
     }
 
+    const rate = total > 0 ? (available / total) * 100 : 100;
+    const isCrowded = rate < 30 && available < 10;
+
+    if (isCrowded) {
+      return (
+        <span className="bg-amber-100 text-amber-700 font-semibold px-2.5 py-1 rounded-full text-xs shrink-0 border border-amber-200 inline-flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+          혼잡 {available}/{total}면
+        </span>
+      );
+    }
+
     return (
       <span className="bg-emerald-100 text-emerald-700 font-semibold px-2.5 py-1 rounded-full text-xs shrink-0 border border-emerald-200 inline-flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

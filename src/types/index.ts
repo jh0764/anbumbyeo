@@ -37,6 +37,15 @@ export interface Parking {
   feeInfo?: string; // 예: "10분당 500원" 또는 "무료"
 }
 
+export interface WeatherInfo {
+  description: string;
+  temp: number;
+  feelsLike: number;
+  humidity: number;
+  icon?: string;
+  emoji?: string;
+}
+
 export interface Festival {
   id: string;
   title: string;
@@ -57,4 +66,6 @@ export interface Festival {
   parkingLots: Parking[];
   startNum?: number;
   endNum?: number;
+  weather?: WeatherInfo | null;
 }
+

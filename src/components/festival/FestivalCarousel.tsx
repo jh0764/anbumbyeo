@@ -4,7 +4,7 @@ import { useRef, useEffect } from 'react';
 import { Festival, Parking } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
 import { renderParkingBadge } from '@/lib/parkingUtils';
-import { Users, Car, MapPin, Calendar, Clock, AlertCircle, Navigation, Sparkles, Tag } from 'lucide-react';
+import { Users, Car, MapPin, Calendar, Clock, AlertCircle, Navigation, Sparkles, Tag, Copy } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface FestivalCarouselProps {
@@ -12,6 +12,8 @@ interface FestivalCarouselProps {
   selectedFestivalId: string | null;
   onSelectFestival: (id: string) => void;
   onOpenDetail: () => void;
+  onOpenNavi?: (target: { name: string; lat: number; lng: number; address?: string }) => void;
+  onCopyAddress?: (addr: string) => void;
 }
 
 export default function FestivalCarousel({
@@ -19,6 +21,8 @@ export default function FestivalCarousel({
   selectedFestivalId,
   onSelectFestival,
   onOpenDetail,
+  onOpenNavi,
+  onCopyAddress,
 }: FestivalCarouselProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -57,8 +61,17 @@ export default function FestivalCarousel({
 
   const handleOpenNavi = (e: React.MouseEvent, parking: Parking) => {
     e.stopPropagation();
-    const query = encodeURIComponent(parking.name);
-    window.open(`https://map.kakao.com/link/search/${query}`, '_blank');
+    if (onOpenNavi) {
+      onOpenNavi({
+        name: parking.name,
+        lat: parking.lat,
+        lng: parking.lng,
+        address: parking.address,
+      });
+    } else {
+      const query = encodeURIComponent(parking.name);
+      window.open(`https://map.kakao.com/link/search/${query}`, '_blank');
+    }
   };
 
   if (festivals.length === 0) {
@@ -119,9 +132,18 @@ export default function FestivalCarousel({
               <div className="h-[105px] flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 shrink-0">
-                      {fest.region} · {fest.categoryType || fest.category}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 shrink-0">
+                        {fest.region} · {fest.categoryType || fest.category}
+                      </span>
+
+                      {fest.weather && (
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100 shrink-0 inline-flex items-center gap-0.5">
+                          <span>{fest.weather.emoji || '☀️'}</span>
+                          <span>{fest.weather.temp}℃</span>
+                        </span>
+                      )}
+                    </div>
 
                     {!isFestival ? (
                       <div className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-600 text-white flex items-center gap-1 shadow-2xs shrink-0">
@@ -161,7 +183,7 @@ export default function FestivalCarousel({
                 </div>
               </div>
 
-              {/* 하단 주차 정보 섹션: h-[76px] min-h-[76px] 완전 고정으로 캐러셀 점핑 해결 */}
+              {/* 하단 주차 정보 섹션 */}
               <div className="h-[76px] min-h-[76px] pt-2 border-t border-slate-100 flex flex-col justify-center">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-1.5 min-w-0 flex-1">
@@ -209,7 +231,7 @@ export default function FestivalCarousel({
                     <button
                       onClick={(e) => handleOpenNavi(e, nearestParking)}
                       className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition-colors shrink-0 shadow-2xs mt-0.5"
-                      title="네비 연결"
+                      title="3대 내비 길찾기"
                     >
                       <Navigation className="w-3 h-3" />
                       <span>길찾기</span>

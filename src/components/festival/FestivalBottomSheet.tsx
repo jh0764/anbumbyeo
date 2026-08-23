@@ -1,6 +1,6 @@
 'use client';
 
-import { Festival } from '@/types';
+import { Festival, Parking } from '@/types';
 import { getFestivalStatus, getDDayString } from '@/lib/festivalUtils';
 import { renderParkingBadge } from '@/lib/parkingUtils';
 import {
@@ -16,6 +16,7 @@ import {
   Info,
   Clock,
   Tag,
+  Copy,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -26,6 +27,8 @@ interface FestivalBottomSheetProps {
   mode: BottomSheetMode;
   onModeChange: (mode: BottomSheetMode) => void;
   onClose: () => void;
+  onOpenNavi?: (target: { name: string; lat: number; lng: number; address?: string }) => void;
+  onCopyAddress?: (addr: string) => void;
 }
 
 export default function FestivalBottomSheet({
@@ -33,6 +36,8 @@ export default function FestivalBottomSheet({
   mode,
   onModeChange,
   onClose,
+  onOpenNavi,
+  onCopyAddress,
 }: FestivalBottomSheetProps) {
   if (!festival || mode === 'collapsed') {
     return null;
@@ -54,9 +59,18 @@ export default function FestivalBottomSheet({
     }
   };
 
-  const handleOpenNavi = (parkingName: string) => {
-    const query = encodeURIComponent(parkingName);
-    window.open(`https://map.kakao.com/link/search/${query}`, '_blank');
+  const handleOpenNavi = (parking: Parking) => {
+    if (onOpenNavi) {
+      onOpenNavi({
+        name: parking.name,
+        lat: parking.lat,
+        lng: parking.lng,
+        address: parking.address,
+      });
+    } else {
+      const query = encodeURIComponent(parking.name);
+      window.open(`https://map.kakao.com/link/search/${query}`, '_blank');
+    }
   };
 
   const handleClose = () => {
@@ -111,10 +125,17 @@ export default function FestivalBottomSheet({
       <div className="flex-1 overflow-y-auto px-5 py-3 space-y-5 no-scrollbar">
         {/* 헤더 타이틀 및 대표 뱃지 */}
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
               {festival.region} · {festival.categoryType || festival.category}
             </span>
+
+            {festival.weather && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100 shrink-0">
+                <span>{festival.weather.emoji || '☀️'}</span>
+                <span>{festival.weather.description} {festival.weather.temp}℃ (체감 {festival.weather.feelsLike}℃)</span>
+              </span>
+            )}
 
             {!isFestival ? (
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-600 text-white flex items-center gap-1 shrink-0">
@@ -140,7 +161,14 @@ export default function FestivalBottomSheet({
           </div>
 
           <h2 className="text-xl font-extrabold text-slate-900 leading-snug break-keep">{festival.title}</h2>
-          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+          <p
+            onClick={() => {
+              const addr = festival.address || festival.locationName;
+              if (addr && onCopyAddress) onCopyAddress(addr);
+            }}
+            className="text-xs text-slate-500 mt-1 flex items-center gap-1 hover:text-slate-700 cursor-pointer"
+            title="주소 복사"
+          >
             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span className="break-keep">{festival.address || festival.locationName}</span>
           </p>
@@ -171,9 +199,6 @@ export default function FestivalBottomSheet({
           ) : (
             <div className="space-y-2.5">
               {sortedParkingLots.map((parking) => {
-                const isRealtime = parking.isRealtime;
-                const isFull = isRealtime && parking.availableSpaces === 0;
-                const isCrowded = isRealtime && parking.availableSpaces <= 5;
                 const isPublic = parking.isPublic !== false;
 
                 return (
@@ -207,23 +232,31 @@ export default function FestivalBottomSheet({
                       </div>
 
                       {parking.address && (
-                        <div className="text-[10px] text-slate-400 mt-1 break-keep">
-                          {parking.address}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onCopyAddress) onCopyAddress(parking.address!);
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer mt-1 break-keep flex items-center gap-1"
+                          title="주차장 주소 복사"
+                        >
+                          <Copy className="w-2.5 h-2.5 shrink-0" />
+                          <span>{parking.address}</span>
                         </div>
                       )}
                     </div>
 
-                    {/* 주차장 상태 뱃지 및 단일 길찾기 버튼 */}
+                    {/* 주차장 상태 뱃지 및 3사 내비 길찾기 버튼 */}
                     <div className="flex items-center gap-2 shrink-0 mt-0.5">
                       {renderParkingBadge(parking)}
 
                       <button
-                        onClick={() => handleOpenNavi(parking.name)}
-                        className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs shrink-0"
-                        title="네비 연결"
+                        onClick={() => handleOpenNavi(parking)}
+                        className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs shrink-0"
+                        title="3대 내비 길찾기"
                       >
                         <Navigation className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">길찾기</span>
+                        <span>길찾기</span>
                       </button>
                     </div>
                   </div>

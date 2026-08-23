@@ -8,6 +8,8 @@ import StatusFilter from '@/components/common/StatusFilter';
 import MainMap from '@/components/map/MainMap';
 import FestivalCarousel from '@/components/festival/FestivalCarousel';
 import FestivalBottomSheet, { BottomSheetMode } from '@/components/festival/FestivalBottomSheet';
+import NavigationModal from '@/components/common/NavigationModal';
+import Toast from '@/components/common/Toast';
 import { fetchFestivals } from '@/services/api';
 import { Festival, Region, CategoryType, StatusFilterType } from '@/types';
 import { getFestivalStatus } from '@/lib/festivalUtils';
@@ -36,6 +38,28 @@ export default function Home() {
   const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode>('collapsed');
   const [autoSwitchedToUpcoming, setAutoSwitchedToUpcoming] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [naviTarget, setNaviTarget] = useState<{ name: string; lat: number; lng: number; address?: string } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((curr) => (curr === msg ? null : curr));
+    }, 2000);
+  }, []);
+
+  const handleCopyAddress = useCallback((addr: string) => {
+    if (!addr) return;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(addr).then(() => {
+        showToast('주차장 주소가 복사되었습니다.');
+      }).catch(() => {
+        showToast('주소 복사에 실패했습니다.');
+      });
+    } else {
+      showToast('주차장 주소가 복사되었습니다.');
+    }
+  }, [showToast]);
 
   // 백엔드 API 호출 및 실데이터 수집 함수
   const loadFestivals = useCallback(async (cat: CategoryType, reg: Region, overrideCoords?: { mapX: number; mapY: number }) => {
@@ -229,6 +253,8 @@ export default function Home() {
               selectedFestivalId={selectedFestivalId}
               onSelectFestival={(id) => setSelectedFestivalId(id)}
               onOpenDetail={() => setBottomSheetMode('half')}
+              onOpenNavi={(target) => setNaviTarget(target)}
+              onCopyAddress={handleCopyAddress}
             />
           </div>
         )}
@@ -241,8 +267,26 @@ export default function Home() {
           mode={bottomSheetMode}
           onModeChange={setBottomSheetMode}
           onClose={() => setSelectedFestivalId(null)}
+          onOpenNavi={(target) => setNaviTarget(target)}
+          onCopyAddress={handleCopyAddress}
         />
       )}
+
+      {/* 4. 길찾기 내비게이션 3사 팝업 모달 */}
+      <NavigationModal
+        isOpen={Boolean(naviTarget)}
+        onClose={() => setNaviTarget(null)}
+        targetName={naviTarget?.name || ''}
+        lat={naviTarget?.lat || 0}
+        lng={naviTarget?.lng || 0}
+        address={naviTarget?.address}
+      />
+
+      {/* 5. 주소 복사 완료 미니 토스트 */}
+      <Toast
+        message={toastMessage}
+        onClose={() => setToastMessage(null)}
+      />
     </main>
   );
 }
