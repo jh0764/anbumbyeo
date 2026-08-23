@@ -79,9 +79,9 @@ export default function Home() {
     setSelectedFestivalId(null);
   }, [selectedCategory, selectedRegion, loadFestivals]);
 
-  // 권역 -> 카테고리 -> 상태 순 필터링
+  // 카테고리 -> 상태 순 필터링 (region 필터링은 백엔드에서 완료됨)
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
-    let result = festivals.filter((f) => f.region === selectedRegion || !f.region);
+    let result = festivals;
 
     result = result.filter((f) => f.categoryType === selectedCategory);
 
@@ -109,7 +109,7 @@ export default function Home() {
       upcomingCount: uCount,
       filteredFestivals: finalFiltered,
     };
-  }, [festivals, selectedRegion, selectedCategory, selectedStatus]);
+  }, [festivals, selectedCategory, selectedStatus]);
 
   // 지도 마커 슬라이싱 (최대 15개)
   const displayFestivals = useMemo(() => {

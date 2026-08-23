@@ -16,48 +16,122 @@ const PARKING_INFO_API_URL =
 const PARKING_STATUS_API_URL =
   'https://api.koreaconnect.kr/01/7/2606081732514722903DCP/LOGIS/api/v1/parking/status';
 
-// 주요 자치구 5자리 법정동 코드 사전
+// 전국 주요 시군구 5자리 법정동 코드 사전
 const SIGUNGU_CODE_MAP: Record<string, string> = {
   // 서울
   '성동구': '11200', '마포구': '11440', '중구': '11140', '종로구': '11110',
   '강남구': '11680', '영등포구': '11560', '용산구': '11170', '성북구': '11290',
   '강서구': '11500', '송파구': '11710', '서초구': '11650', '관악구': '11620',
-  '동대문구': '11230', '광진구': '11215',
+  '동대문구': '11230', '광진구': '11215', '노원구': '11350', '도봉구': '11320',
+  '은평구': '11380', '서대문구': '11410', '동작구': '11590', '양천구': '11470',
+  '구로구': '11530', '금천구': '11545', '강동구': '11740', '중랑구': '11260',
   // 부산
   '수영구': '26500', '해운대구': '26350', '사상구': '26530', '부산진구': '26230',
-  '남구': '26290', '연제구': '26470', '동래구': '26260', '금정구': '26410',
+  '연제구': '26470', '동래구': '26260', '금정구': '26410',
+  '북구': '26320', '사하구': '26380', '강서구(부산)': '26440',
+  '기장군': '26710', '영도구': '26200', '중구(부산)': '26110', '동구(부산)': '26140',
+  '서구(부산)': '26170',
+  // 대구
+  '수성구': '27260', '달서구': '27290', '북구(대구)': '27230',
+  '중구(대구)': '27110', '동구(대구)': '27140', '서구(대구)': '27170',
+  '남구(대구)': '27200', '달성군': '27710',
+  // 대전
+  '유성구': '30200', '서구(대전)': '30170', '중구(대전)': '30110',
+  '동구(대전)': '30140', '대덕구': '30230',
+  // 광주
+  '북구(광주)': '29170', '서구(광주)': '29140', '남구(광주)': '29155',
+  '동구(광주)': '29110', '광산구': '29200',
   // 울산
-  '울산 남구': '31140', '울산 중구': '31110',
-  // 기타 주요 도시
-  '수원시': '41110', '강릉시': '42150', '서천군': '44770', '보령시': '44180',
-  '여수시': '46130', '전주시': '45111', '경주시': '47130', '제주시': '50110',
+  '울산 남구': '31140', '울산 중구': '31110', '울산 동구': '31170',
+  '울산 북구': '31200', '울주군': '31710',
+  // 인천
+  '부평구': '28237', '남동구': '28200', '미추홀구': '28177',
+  '연수구': '28185', '중구(인천)': '28110', '계양구': '28245',
+  '서구(인천)': '28260', '강화군': '28710',
+  // 경기
+  '수원시': '41110', '성남시': '41130', '고양시': '41280', '용인시': '41460',
+  '안양시': '41170', '부천시': '41190', '화성시': '41590', '안산시': '41270',
+  '남양주시': '41360', '의정부시': '41150', '파주시': '41480', '김포시': '41570',
+  '광명시': '41210', '시흥시': '41390', '하남시': '41450',
+  '평택시': '41220', '양주시': '41630', '구리시': '41310',
+  // 강원
+  '강릉시': '42150', '속초시': '42210', '춘천시': '42110', '원주시': '42130',
+  '동해시': '42170', '삼척시': '42230', '양양군': '42830',
+  '인제군': '42810', '평창군': '42760', '정선군': '42770', '태백시': '42190',
+  // 충남/충북
+  '천안시': '44130', '청주시': '43110', '서산시': '44210', '아산시': '44200',
+  '서천군': '44770', '보령시': '44180', '공주시': '44150', '논산시': '44230',
+  '당진시': '44270', '충주시': '43130', '제천시': '43150',
+  // 전남/전북
+  '여수시': '46130', '전주시': '45111', '순천시': '46150', '목포시': '46110',
+  '광양시': '46230', '나주시': '46170', '군산시': '45130', '익산시': '45140',
+  '남원시': '45190', '정읍시': '45180',
+  // 경남/경북
+  '경주시': '47130', '포항시': '47110', '김해시': '48250', '창원시': '48120',
+  '거제시': '48310', '양산시': '48330', '진주시': '48170', '통영시': '48220',
+  '구미시': '47190', '안동시': '47150', '영주시': '47210',
+  // 제주
+  '제주시': '50110', '서귀포시': '50130',
+  // 세종
+  '세종시': '36110',
 };
 
 function getSigunguCodeFromAddress(address: string, lat: number, lng: number): string {
   if (!address) {
-    if (lat > 37.3) return '11140'; // 서울 중구 기본
-    return '26500'; // 부산 수영구 기본
+    return getSigunguCodeFromCoords(lat, lng);
   }
 
+  // 주소에서 시군구 키워드 직접 매칭 (괄호 없는 키 우선)
   for (const [key, code] of Object.entries(SIGUNGU_CODE_MAP)) {
-    if (address.includes(key)) return code;
+    if (!key.includes('(') && address.includes(key)) return code;
   }
 
+  // 광역시/도 레벨 보조 매칭
   if (address.includes('신설동') || address.includes('동대문')) return '11230';
   if (address.includes('봉천') || address.includes('관악')) return '11620';
-  if (address.includes('종로') || address.includes('세종로')) return '11110';
-  if (address.includes('마포') || address.includes('성산') || address.includes('월드컵')) return '11440';
-  if (address.includes('성수') || address.includes('연무장') || address.includes('성동')) return '11200';
-  if (address.includes('금정') || address.includes('부곡') || address.includes('서동')) return '26410';
-  if (address.includes('광안') || address.includes('민락')) return '26500';
   if (address.includes('벡스코') || address.includes('센텀')) return '26350';
-  if (address.includes('삼락')) return '26530';
-  if (address.includes('울산')) return '31140';
-  if (address.includes('서울')) return '11140';
-  if (address.includes('부산')) return '26500';
+  if (address.includes('광안') || address.includes('민락')) return '26500';
 
-  if (lat > 37.3) return '11140';
-  return '26500';
+  // 광역시/도명에서 대표 시군구 코드 반환
+  if (address.includes('서울')) return '11140';
+  if (address.includes('부산')) return '26230';
+  if (address.includes('대구')) return '27260';
+  if (address.includes('대전')) return '30200';
+  if (address.includes('광주')) return '29170';
+  if (address.includes('울산')) return '31140';
+  if (address.includes('인천')) return '28237';
+  if (address.includes('세종')) return '36110';
+  if (address.includes('제주') || address.includes('서귀포')) return '50110';
+  if (address.includes('강원') || address.includes('강릉')) return '42150';
+  if (address.includes('경기') || address.includes('수원')) return '41110';
+  if (address.includes('충남') || address.includes('천안')) return '44130';
+  if (address.includes('충북') || address.includes('청주')) return '43110';
+  if (address.includes('전남') || address.includes('순천') || address.includes('여수')) return '46130';
+  if (address.includes('전북') || address.includes('전주')) return '45111';
+  if (address.includes('경남') || address.includes('창원') || address.includes('김해')) return '48120';
+  if (address.includes('경북') || address.includes('포항') || address.includes('경주')) return '47130';
+
+  return getSigunguCodeFromCoords(lat, lng);
+}
+
+// 좌표 기반 시군구 코드 추정 (주소 매칭 실패 시 폴백)
+function getSigunguCodeFromCoords(lat: number, lng: number): string {
+  if (lat > 37.4 && lng > 126.8 && lng < 127.2) return '11140'; // 서울
+  if (lat > 37.2 && lat <= 37.4 && lng > 126.8 && lng < 127.2) return '41110'; // 수원/경기
+  if (lat > 37.5 && lng > 126.5 && lng <= 126.8) return '28237'; // 인천
+  if (lat > 37.5 && lng > 127.5) return '42150'; // 강원 강릉
+  if (lat > 37.0 && lat <= 37.5 && lng > 127.5) return '42130'; // 강원 원주
+  if (lat > 36.0 && lat <= 37.0 && lng < 127.5) return '44130'; // 충남 천안
+  if (lat > 36.0 && lat <= 37.0 && lng >= 127.5) return '43110'; // 충북 청주
+  if (lat > 35.5 && lat <= 36.0 && lng < 127.5) return '30200'; // 대전
+  if (lat > 35.0 && lat <= 35.5 && lng < 127.0) return '29170'; // 광주
+  if (lat > 35.0 && lat <= 35.5 && lng >= 127.0 && lng < 128.0) return '45111'; // 전주
+  if (lat > 35.5 && lat <= 36.5 && lng >= 128.0) return '27260'; // 대구
+  if (lat <= 35.0 && lng < 127.5) return '46130'; // 여수
+  if (lat <= 35.3 && lng >= 128.8) return '26230'; // 부산
+  if (lat <= 35.5 && lng >= 127.5 && lng < 128.8) return '48120'; // 창원
+  if (lat < 33.6) return '50110'; // 제주
+  return '11140'; // 최종 폴백
 }
 
 function getRegionFromAddress(address: string, lat: number, lng: number): Region {
@@ -268,6 +342,7 @@ export async function GET(request: NextRequest) {
 
     const sigunguCodesToQuery = new Set<string>();
 
+    // 축제/명소 위치에서 자동으로 시군구 코드 추출
     for (const item of rawList.slice(0, 50)) {
       const addr = item.addr1 || '';
       const lat = parseFloat(item.mapy || '0');
@@ -276,18 +351,8 @@ export async function GET(request: NextRequest) {
       sigunguCodesToQuery.add(code);
     }
 
-    sigunguCodesToQuery.add(getSigunguCodeFromAddress('', targetCenterLat, targetCenterLng));
-    sigunguCodesToQuery.add('11230'); // 동대문구 (신설동)
-    sigunguCodesToQuery.add('11620'); // 관악구 (봉천복개3)
-    sigunguCodesToQuery.add('11110'); // 종로구 (세종로)
-    sigunguCodesToQuery.add('11440'); // 마포구 (서울프린지)
-    sigunguCodesToQuery.add('11200'); // 성동구 (성수동)
-    sigunguCodesToQuery.add('11140'); // 서울 중구
-    sigunguCodesToQuery.add('26500'); // 수영구 (광안리)
-    sigunguCodesToQuery.add('26350'); // 해운대구 (벡스코)
-    sigunguCodesToQuery.add('26530'); // 사상구 (삼락)
-    sigunguCodesToQuery.add('26410'); // 부산 금정구 (서동, 부곡동)
-    sigunguCodesToQuery.add('31140'); // 울산 남구 (울산대공원)
+    // 지도 중심 좌표 기반 코드 추가
+    sigunguCodesToQuery.add(getSigunguCodeFromCoords(targetCenterLat, targetCenterLng));
 
     let parkingInfoList: any[] = [];
     const liveMap = new Map<string, any>();
@@ -403,14 +468,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 핀포인트 1:1 강제 실시간 조인 (1,000건 누락 방지 강제 결합)
-    // 배치 청킹: 최대 10개씩 순차 배치로 API 레이트 리밋 방지
+    // 핀포인트 1:1 강제 실시간 조인 (시군구 일괄 수신에서 누락된 건만 보충)
+    // 속도 최적화: 최대 30건만 핀포인트 조회, 15개씩 병렬 배치
     const rawCandidateList = Array.from(facilityGroupMap.values());
     const pinpointCodesToQuery = rawCandidateList
       .map((info) => String(info.std_prl_cd || info.std_prk_mg_no || '').trim())
-      .filter((code) => code && !liveMap.has(code));
+      .filter((code) => code && !liveMap.has(code))
+      .slice(0, 30); // 최대 30건으로 제한하여 응답 속도 보장
 
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 15;
     for (let i = 0; i < pinpointCodesToQuery.length; i += BATCH_SIZE) {
       const batch = pinpointCodesToQuery.slice(i, i + BATCH_SIZE);
       const batchPromises = batch.map(async (code) => {
@@ -503,10 +569,22 @@ export async function GET(request: NextRequest) {
 
         // [엄격 적용: 요청된 region 권역 파라미터가 있는 경우 주소 필터링 100% 집행]
         if (requestedRegionParam && requestedRegionParam !== '전국' && requestedRegionParam !== '전체') {
-          if (requestedRegionParam === '부산' && !addrStr.includes('부산')) return false;
-          if (requestedRegionParam === '서울' && !addrStr.includes('서울')) return false;
-          if (requestedRegionParam === '대구' && !addrStr.includes('대구')) return false;
-          if (requestedRegionParam === '대전' && !addrStr.includes('대전')) return false;
+          const regionKeywordMap: Record<string, string[]> = {
+            '서울': ['서울'],
+            '경기·인천': ['경기', '인천'],
+            '부산': ['부산'],
+            '대구': ['대구'],
+            '대전': ['대전'],
+            '강원': ['강원'],
+            '충청': ['충남', '충북', '충청', '세종', '대전'],
+            '전라': ['전남', '전북', '전라', '광주'],
+            '경상': ['경남', '경북', '경상', '울산'],
+            '제주': ['제주', '서귀포'],
+          };
+          const keywords = regionKeywordMap[requestedRegionParam];
+          if (keywords && !keywords.some((kw) => addrStr.includes(kw))) {
+            return false;
+          }
         }
 
         if (typeIdStr === '12' || categoryParam === '공원·나들이') {
@@ -586,33 +664,37 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      // 반경 확장 Fallback (1.5km -> 3km -> 5km)
-      let validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 1500);
+      // 반경 확장 Fallback (1km -> 2km -> 3km) — 최대 3km으로 제한하여 먼 주차장 방지
+      let validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 1000);
       if (validNearbyLots.length < 3) {
-        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 3000);
+        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 2000);
       }
       if (validNearbyLots.length < 3) {
-        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 5000);
+        validNearbyLots = scoredLots.filter((p) => p.distanceMeters <= 3000);
       }
 
       // 그룹 분리: 직속 주차장 / 실시간 연동 주차장 / 일반 현장확인 주차장
       const directVenueParkings = validNearbyLots.filter((p) => p.priorityScore < -1000);
       const regularParkings = validNearbyLots.filter((p) => p.priorityScore >= -1000);
 
-      // 실시간 연동 그룹 (공영 우선 -> 거리순)
+      // 실시간 연동 그룹 (거리순 우선 → 같은 거리 내에서 공영 우선)
       const liveParkings = regularParkings
         .filter((p) => p.isLive)
         .sort((a, b) => {
+          const distDiff = a.distanceMeters - b.distanceMeters;
+          if (Math.abs(distDiff) > 200) return distDiff; // 200m 이상 차이면 거리 우선
           if (a.isPublic !== b.isPublic) return a.isPublic ? -1 : 1;
-          return a.priorityScore - b.priorityScore;
+          return distDiff;
         });
 
-      // 일반 현장확인 그룹 (공영 우선 -> 거리순)
+      // 일반 현장확인 그룹 (거리순 우선 → 같은 거리 내에서 공영 우선)
       const fallbackParkings = regularParkings
         .filter((p) => !p.isLive)
         .sort((a, b) => {
+          const distDiff = a.distanceMeters - b.distanceMeters;
+          if (Math.abs(distDiff) > 200) return distDiff;
           if (a.isPublic !== b.isPublic) return a.isPublic ? -1 : 1;
-          return a.priorityScore - b.priorityScore;
+          return distDiff;
         });
 
       // 2단계 슬롯 조합: 직속 주차장 -> 실시간 연동 -> 일반 현장확인 (슬롯 5개 무조건 보장)

@@ -88,12 +88,22 @@ export default function FestivalCarousel({
             <div
               key={fest.id}
               data-festival-id={fest.id}
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 onSelectFestival(fest.id);
                 onOpenDetail();
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectFestival(fest.id);
+                  onOpenDetail();
+                }
+              }}
+              aria-label={`${fest.title} 상세보기`}
               className={clsx(
-                'snap-center shrink-0 w-[320px] h-[225px] min-h-[225px] p-3.5 bg-white/95 backdrop-blur-md rounded-2xl border transition-all duration-200 shadow-md cursor-pointer flex flex-col justify-between',
+                'snap-center shrink-0 w-[85vw] max-w-[320px] h-[225px] min-h-[225px] p-3.5 bg-white/95 backdrop-blur-md rounded-2xl border transition-all duration-200 shadow-md cursor-pointer flex flex-col justify-between',
                 isSelected
                   ? 'border-emerald-600 ring-2 ring-emerald-500/20 scale-[1.01]'
                   : 'border-slate-200 hover:border-slate-300'
