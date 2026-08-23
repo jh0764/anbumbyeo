@@ -84,7 +84,11 @@ export default function Home() {
   const { liveCount, upcomingCount, filteredFestivals } = useMemo(() => {
     let result = festivals;
 
-    result = result.filter((f) => f.categoryType === selectedCategory);
+    result = result.filter((f) => {
+      const matchCat = f.categoryType === selectedCategory;
+      const matchReg = !f.region || f.region === selectedRegion;
+      return matchCat && matchReg;
+    });
 
     const validFestivals = result.filter((f) => {
       if (f.categoryType !== '축제') return true;

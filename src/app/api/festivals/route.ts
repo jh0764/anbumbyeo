@@ -893,9 +893,26 @@ export async function GET(request: NextRequest) {
       return bStart - aStart;
     });
 
+    const finalFilteredFestivals = (requestedRegionParam && requestedRegionParam !== '전국' && requestedRegionParam !== '전체')
+      ? sortedFestivals.filter((f) => {
+          const addr = f.address || '';
+          if (requestedRegionParam === '대구') return addr.includes('대구');
+          if (requestedRegionParam === '부산') return addr.includes('부산');
+          if (requestedRegionParam === '서울') return addr.includes('서울');
+          if (requestedRegionParam === '대전') return addr.includes('대전');
+          if (requestedRegionParam === '경기·인천') return addr.includes('경기') || addr.includes('인천');
+          if (requestedRegionParam === '강원') return addr.includes('강원');
+          if (requestedRegionParam === '충청') return addr.includes('충남') || addr.includes('충북') || addr.includes('충청') || addr.includes('세종') || addr.includes('천안') || addr.includes('청주');
+          if (requestedRegionParam === '전라') return addr.includes('전남') || addr.includes('전북') || addr.includes('전라') || addr.includes('광주') || addr.includes('전주');
+          if (requestedRegionParam === '경상') return addr.includes('경남') || addr.includes('경북') || addr.includes('경상') || addr.includes('울산') || addr.includes('포항') || addr.includes('경주') || addr.includes('창원') || addr.includes('구미') || addr.includes('안동') || addr.includes('김해');
+          if (requestedRegionParam === '제주') return addr.includes('제주') || addr.includes('서귀포');
+          return f.region === requestedRegionParam;
+        })
+      : sortedFestivals;
+
     return NextResponse.json({
       success: true,
-      data: sortedFestivals,
+      data: finalFilteredFestivals,
     });
   } catch (error: any) {
     console.error('[API Exception] /api/festivals 예외:', error);
