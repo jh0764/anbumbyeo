@@ -57,9 +57,6 @@ export default function Home() {
 
       if (data && Array.isArray(data)) {
         setFestivals(data);
-        if (data.length > 0) {
-          setSelectedFestivalId(data[0].id);
-        }
       }
     } catch (err) {
       console.error('Failed to load festivals from API:', err);

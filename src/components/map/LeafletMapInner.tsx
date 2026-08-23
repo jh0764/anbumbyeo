@@ -153,8 +153,10 @@ function CameraController({
 
 function MapEventsController({
   onSearchArea,
+  onMapClick,
 }: {
   onSearchArea?: (center: { lat: number; lng: number }) => void;
+  onMapClick?: () => void;
 }) {
   const map = useMap();
   const [showSearchBtn, setShowSearchBtn] = useState(false);
@@ -167,9 +169,16 @@ function MapEventsController({
     zoomend: () => {
       setShowSearchBtn(true);
     },
+    click: (e) => {
+      // 지도의 빈 배경 터치 시 선택 해제
+      if (onMapClick) {
+        onMapClick();
+      }
+    },
   });
 
-  const handleSearch = () => {
+  const handleSearch = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!onSearchArea) return;
     setIsSearching(true);
     const center = map.getCenter();
@@ -262,7 +271,7 @@ export default function LeafletMapInner({
 
   const defaultCenter = useRef<[number, number]>(initialCenter).current;
 
-  // selectedFestival 활성화 시 도보 1km 이내 공영/민영 주차장 렌더링
+  // selectedFestival 활성화 시에만 도보 1km 이내 공영/민영 주차장 렌더링
   const displayParkingLots = useMemo(() => {
     if (!selectedFestival || !selectedFestival.parkingLots) return [];
 
@@ -291,7 +300,10 @@ export default function LeafletMapInner({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <MapEventsController onSearchArea={onSearchArea} />
+        <MapEventsController
+          onSearchArea={onSearchArea}
+          onMapClick={() => onSelectFestival(null)}
+        />
 
         <CameraController
           selectedFestival={selectedFestival}
@@ -299,27 +311,25 @@ export default function LeafletMapInner({
           parkingLots={displayParkingLots}
         />
 
-        {/* 1. 축제 핀 마커 렌더링 */}
-        {selectedFestival ? (
-          <Marker
-            key={`fest-focus-${selectedFestival.id}`}
-            position={[selectedFestival.lat, selectedFestival.lng]}
-            icon={createFestivalIcon(selectedFestival, true)}
-          />
-        ) : (
-          uniqueFestivals.map((fest, idx) => (
+        {/* 1. 모든 축제/명소 핀 마커 상시 렌더링 (선택된 항목은 강조 핀) */}
+        {uniqueFestivals.map((fest, idx) => {
+          const isSelected = fest.id === selectedFestivalId;
+          return (
             <Marker
-              key={`fest-all-${fest.id}-${idx}`}
+              key={`fest-${fest.id}-${idx}`}
               position={[fest.lat, fest.lng]}
-              icon={createFestivalIcon(fest, false)}
+              icon={createFestivalIcon(fest, isSelected)}
               eventHandlers={{
-                click: () => onSelectFestival(fest.id),
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e as any);
+                  onSelectFestival(fest.id);
+                },
               }}
             />
-          ))
-        )}
+          );
+        })}
 
-        {/* 2. 축제 선택 시 주변 주차장 P 마커 즉시 렌더링 & 팝업(요금, 도보시간, 잔여면수) 연동 */}
+        {/* 2. 명소 선택 시에만 해당 명소의 주변 P 주차장 마커 동적 노출 */}
         {selectedFestival &&
           displayParkingLots.map((parking, idx) => {
             const parkingKey = `parking-${parking.id || 'prk'}-${idx}`;
@@ -329,6 +339,11 @@ export default function LeafletMapInner({
                 key={parkingKey}
                 position={[parking.lat, parking.lng]}
                 icon={createParkingIcon(parking)}
+                eventHandlers={{
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e as any);
+                  },
+                }}
               >
                 <Popup className="custom-popup" offset={[0, -10]}>
                   <div className="p-1.5 text-xs max-w-[200px]">
