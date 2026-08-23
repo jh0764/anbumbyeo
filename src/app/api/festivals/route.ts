@@ -559,13 +559,15 @@ export async function GET(request: NextRequest) {
     let parkingInfoList: any[] = [];
     const liveMap = new Map<string, any>();
 
-    // API 1: 기본정보 수신 (필터링된 시군구만 병렬 수신)
+    // API 1: 기본정보 수신 (동적 추출된 시군구 병렬 수신, 3초 타임아웃 방어)
     const fetchInfoPromises = Array.from(sigunguCodesToQuery).map(async (code) => {
+      if (!code) return [];
       const infoUrl = `${PARKING_INFO_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
       try {
         const iRes = await fetch(infoUrl, {
           cache: 'no-store',
           headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+          signal: AbortSignal.timeout(3000),
         });
         if (!iRes.ok) return [];
         const iJson = await iRes.json();
@@ -576,47 +578,16 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // API 2: 실시간 현황 수신
-    const fetchStatusPromises = Array.from(sigunguCodesToQuery).map(async (code) => {
-      const statusUrl = `${PARKING_STATUS_API_URL}?pageNo=1&pageSize=1000&addr_cd=${code}&addr_type=SIGUNGU`;
-      try {
-        const sRes = await fetch(statusUrl, {
-          cache: 'no-store',
-          headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
-        });
-        if (!sRes.ok) return [];
-        const sJson = await sRes.json();
-        const rawS = sJson?.data || sJson?.response?.body?.items?.item || sJson?.items;
-        return Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
-      } catch {
-        return [];
-      }
-    });
-
-    const [infoResResult, statusResResult] = await Promise.allSettled([
-      Promise.all(fetchInfoPromises),
-      Promise.all(fetchStatusPromises),
-    ]);
+    const infoResults = await Promise.allSettled(fetchInfoPromises);
 
     const seenCodes = new Set<string>();
-    if (infoResResult.status === 'fulfilled' && Array.isArray(infoResResult.value)) {
-      for (const resList of infoResResult.value) {
-        for (const item of resList) {
+    for (const r of infoResults) {
+      if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+        for (const item of r.value) {
           const code = String(item.std_prl_cd || item.std_prk_mg_no || '').trim();
           if (code && !seenCodes.has(code)) {
             seenCodes.add(code);
             parkingInfoList.push(item);
-          }
-        }
-      }
-    }
-
-    if (statusResResult.status === 'fulfilled' && Array.isArray(statusResResult.value)) {
-      for (const resList of statusResResult.value) {
-        for (const s of resList) {
-          const code = String(s?.std_prl_cd || s?.std_prk_mg_no || s?.std_prk_cd || '').trim();
-          if (code) {
-            liveMap.set(code, s);
           }
         }
       }
@@ -664,6 +635,36 @@ export async function GET(request: NextRequest) {
     }
 
     const rawCandidateList = Array.from(facilityGroupMap.values());
+
+    // 4-1. [전국 실시간 연동] 선별된 후보 주차장(최대 40개)에 대해 실시간 잔여석 API 핀포인트 병렬 조회
+    const candidateLotsToQueryStatus = rawCandidateList
+      .filter((info) => {
+        const total = info.parsedTotal || 0;
+        return total >= 10 || isStrictPublicParking(info);
+      })
+      .slice(0, 40);
+
+    await Promise.allSettled(
+      candidateLotsToQueryStatus.map(async (info) => {
+        const code = String(info.std_prl_cd || info.std_prk_mg_no || '').trim();
+        if (!code) return;
+        try {
+          const sRes = await fetch(`${PARKING_STATUS_API_URL}?std_prl_cd=${code}`, {
+            cache: 'no-store',
+            headers: { api_user_key_id: parkingApiKey, Accept: 'application/json' },
+            signal: AbortSignal.timeout(2500),
+          });
+          if (!sRes.ok) return;
+          const sJson = await sRes.json();
+          const sData = sJson?.data?.[0];
+          if (sData) {
+            liveMap.set(code, sData);
+          }
+        } catch {
+          // 실시간 조회 실패 시 안전하게 기본 정보로 Fallback
+        }
+      })
+    );
     const candidateParkingList: Parking[] = [];
 
     for (const info of rawCandidateList) {
