@@ -131,12 +131,83 @@ function getSigunguCodeFromAddress(address: string, lat: number, lng: number): s
     return getSigunguCodeFromCoords(lat, lng);
   }
 
-  // 주소에서 시군구 키워드 직접 매칭 (세부 구/군 단위 우선)
+  // 1. 광역시/도 복합 구 명칭 우선 매칭 (동음이의 구 충돌 방지)
+  if (address.includes('대전')) {
+    if (address.includes('중구')) return '30140';
+    if (address.includes('서구')) return '30170';
+    if (address.includes('동구')) return '30110';
+    if (address.includes('유성구')) return '30200';
+    if (address.includes('대덕구')) return '30230';
+  }
+  if (address.includes('대구')) {
+    if (address.includes('중구')) return '27110';
+    if (address.includes('동구')) return '27140';
+    if (address.includes('서구')) return '27170';
+    if (address.includes('남구')) return '27200';
+    if (address.includes('북구')) return '27230';
+    if (address.includes('수성구')) return '27260';
+    if (address.includes('달서구')) return '27290';
+    if (address.includes('달성군')) return '27710';
+  }
+  if (address.includes('부산')) {
+    if (address.includes('중구')) return '26110';
+    if (address.includes('서구')) return '26140';
+    if (address.includes('동구')) return '26170';
+    if (address.includes('영도구')) return '26200';
+    if (address.includes('부산진구')) return '26230';
+    if (address.includes('동래구')) return '26260';
+    if (address.includes('남구')) return '26290';
+    if (address.includes('북구')) return '26320';
+    if (address.includes('해운대구')) return '26350';
+    if (address.includes('사하구')) return '26380';
+    if (address.includes('금정구')) return '26410';
+    if (address.includes('강서구')) return '26440';
+    if (address.includes('연제구')) return '26470';
+    if (address.includes('수영구')) return '26500';
+    if (address.includes('사상구')) return '26530';
+    if (address.includes('기장군')) return '26710';
+  }
+  if (address.includes('인천')) {
+    if (address.includes('중구')) return '28110';
+    if (address.includes('동구')) return '28140';
+    if (address.includes('미추홀구')) return '28177';
+    if (address.includes('연수구')) return '28185';
+    if (address.includes('남동구')) return '28200';
+    if (address.includes('부평구')) return '28237';
+    if (address.includes('계양구')) return '28245';
+    if (address.includes('서구')) return '28260';
+    if (address.includes('강화군')) return '28710';
+    if (address.includes('옹진군')) return '28720';
+  }
+  if (address.includes('광주')) {
+    if (address.includes('동구')) return '29110';
+    if (address.includes('서구')) return '29140';
+    if (address.includes('남구')) return '29155';
+    if (address.includes('북구')) return '29170';
+    if (address.includes('광산구')) return '29200';
+  }
+  if (address.includes('울산')) {
+    if (address.includes('중구')) return '31110';
+    if (address.includes('남구')) return '31140';
+    if (address.includes('동구')) return '31170';
+    if (address.includes('북구')) return '31200';
+    if (address.includes('울주군')) return '31710';
+  }
+  if (address.includes('포항')) {
+    if (address.includes('남구')) return '47111';
+    if (address.includes('북구')) return '47113';
+  }
+  if (address.includes('서울')) {
+    if (address.includes('중구')) return '11140';
+    if (address.includes('강서구')) return '11500';
+  }
+
+  // 2. 주소에서 시군구 키워드 직접 매칭 (세부 구/군 단위 우선)
   for (const [key, code] of Object.entries(SIGUNGU_CODE_MAP)) {
     if (!key.includes('(') && address.includes(key)) return code;
   }
 
-  // 보조 랜드마크 매칭
+  // 3. 보조 랜드마크 매칭
   if (address.includes('신설동') || address.includes('동대문')) return '11230';
   if (address.includes('봉천') || address.includes('관악')) return '11620';
   if (address.includes('벡스코') || address.includes('센텀')) return '26350';
@@ -210,8 +281,51 @@ function getCategoryTypeFromContentTypeId(contentTypeId?: string): CategoryType 
 function cleanParkingName(name: string): string {
   if (!name) return '주차장';
   return name
-    .replace(/\(구\)|\(시\)|\(도\)|완속충전기|급속충전기|\[전기차충전소\]/gi, '')
+    .replace(/\(구\)|\(시\)|\(도\)|\(군\)|완속충전기|급속충전기|\[전기차충전소\]|\[공영\]|\[민영\]/gi, '')
+    .replace(/\s+/g, ' ')
     .trim();
+}
+
+function getNormalizedGroupKey(name: string, lat: number, lng: number): string {
+  const baseName = name
+    .replace(/\(구\)|\(시\)|\(도\)|\(군\)|완속충전기|급속충전기|\[전기차충전소\]|\[공영\]|\[민영\]/gi, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+  return `${baseName}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+}
+
+function isEVOnlyRecord(info: any): boolean {
+  const rawName = String(info.prl_nm || info.prk_nm || '');
+  const rawDiv = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || '');
+  const numSum = parseInt(info.sum_park_cnt || '0', 10) || 0;
+  const numGnr = parseInt(info.gnr_park_cnt || '0', 10) || 0;
+  const total = Math.max(numSum, numGnr);
+
+  // 1. 명칭/구분에 전기차 충전기/전용 시설 명시
+  const evKeywords = /완속충전기|급속충전기|전기차충전소|전기자동차충전소|EV충전소|EV충전기|\[전기차\]|차지비|에스트래픽|대영채비|파워큐브|플러그링크/i;
+  if (evKeywords.test(rawName) || evKeywords.test(rawDiv)) return true;
+
+  // 2. 기둥 번호, 층수 표기 등 개별 충전기 설치 위치 표기된 레코드
+  if (/기둥|B\d층|지하\d층|\d+동\s*B\d/i.test(rawName)) return true;
+
+  // 3. 전기차/EV 키워드가 포함되어 있고 면수가 5면 이하인 전용 구역 레코드
+  if (/전기차|EV|충전/i.test(rawName) && total <= 5) return true;
+
+  return false;
+}
+
+function isDisabledOnlyRecord(info: any): boolean {
+  const rawName = String(info.prl_nm || info.prk_nm || '');
+  const rawDiv = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || '');
+  return /장애인\s*전용|장애인\s*주차|장애인구역/i.test(rawName) || /장애인/i.test(rawDiv);
+}
+
+function isResidentialRecord(info: any): boolean {
+  const rawName = String(info.prl_nm || info.prk_nm || '');
+  const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
+  const rawDiv = String(info.prl_div_nm || info.prl_kind_nm || info.prk_kind_nm || '');
+  const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠|래미안|자이|푸르지오|힐스테이트|아이파크|더샵|e편한세상|롯데캐슬|SK뷰|SKVIEW|호반|베르디움|중흥|카이저|포레스트|타운하우스|빌리지|거주자우선|거주자전용|주거지전용/i;
+  return residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr) || residentialKeywords.test(rawDiv);
 }
 
 function isStrictPublicParking(info: any): boolean {
@@ -506,41 +620,38 @@ export async function GET(request: NextRequest) {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) continue;
 
       const rawName = String(info.prl_nm || info.prk_nm || '');
-      const rawSource = String(info.souc_nm || '');
-      const rawAddr = String(info.prl_road_addr_nm || info.prl_jino_addr_nm || info.l_road_addr_nm || '');
-      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10) || 0;
+      const numSum = parseInt(info.sum_park_cnt || '0', 10) || 0;
+      const numGnr = parseInt(info.gnr_park_cnt || '0', 10) || 0;
+      const totalSpaces = Math.max(numSum, numGnr);
 
-      // --- [1단계] 전기차 충전 전용 주차장 배제 ---
-      const evKeywords = /충전기|충전소|전기차|EV충전|전기자동차/i;
-      const isEVOnly =
-        (rawSource.includes('한국환경공단') && evKeywords.test(rawName)) ||
-        (evKeywords.test(rawName) && totalSpaces <= 10);
-      if (isEVOnly) continue;
+      // --- [1단계] 전기차 전용 구역/충전소 식별 및 배제 ---
+      if (isEVOnlyRecord(info)) continue;
 
-      // --- [2단계] 장애인 전용 주차장 배제 ---
-      const disabledKeywords = /장애인\s*전용|장애인\s*주차|장애인구역/i;
-      const isDisabledOnly = disabledKeywords.test(rawName);
-      if (isDisabledOnly) continue;
+      // --- [2단계] 장애인 전용 주차구역 식별 및 배제 ---
+      if (isDisabledOnlyRecord(info)) continue;
 
       // --- [3단계] 주거지(아파트/빌라 등) 부설 주차장 배제 ---
-      const residentialKeywords = /아파트|맨션|빌라|연립|주택|클래스|하이츠|래미안|자이|푸르지오|힐스테이트|아이파크|더샵|e편한세상|롯데캐슬|SK뷰|SKVIEW|호반|베르디움|중흥|카이저|포레스트/i;
-      if (residentialKeywords.test(rawName) || residentialKeywords.test(rawAddr)) {
-        continue;
+      if (isResidentialRecord(info)) continue;
+
+      // --- [4단계] 일반 차량 진입 불가능한 초소형(1~2면) 비공영 노면 배제 ---
+      if (totalSpaces > 0 && totalSpaces < 3) {
+        const isMun = /공영|구립|시립|환승/i.test(rawName);
+        if (!isMun) continue;
       }
 
-      // --- [4단계] 중복 시설 그룹핑 (같은 이름 → 큰 면수 우선) ---
+      // --- [5단계] 중복 시설 그룹핑 (정규화 명칭 + 근접 좌표 기준, 전체 일반면수 큰 레코드 우선) ---
       const cleanedName = cleanParkingName(rawName);
-      const groupKey = cleanedName.includes('벡스코') || cleanedName.includes('BEXCO')
+      const groupKey = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? '벡스코_GROUP'
-        : (info.std_prl_cd || info.std_prk_mg_no || cleanedName);
+        : getNormalizedGroupKey(cleanedName, lat, lng);
 
       const existing = facilityGroupMap.get(groupKey);
       if (!existing) {
-        facilityGroupMap.set(groupKey, info);
+        facilityGroupMap.set(groupKey, { ...info, parsedTotal: totalSpaces });
       } else {
-        const existingSpaces = parseInt(existing.sum_park_cnt || existing.gnr_park_cnt || '0', 10) || 0;
+        const existingSpaces = existing.parsedTotal || 0;
         if (totalSpaces > existingSpaces) {
-          facilityGroupMap.set(groupKey, info);
+          facilityGroupMap.set(groupKey, { ...info, parsedTotal: totalSpaces });
         }
       }
     }
@@ -553,7 +664,7 @@ export async function GET(request: NextRequest) {
       const lng = parseFloat(info.lo_val || info.lng || '0');
       const rawName = String(info.prl_nm || info.prk_nm || '');
       const cleanedName = cleanParkingName(rawName);
-      const totalSpaces = parseInt(info.sum_park_cnt || info.gnr_park_cnt || '0', 10) || 0;
+      const totalSpaces = info.parsedTotal || 0;
       const isPublic = isStrictPublicParking(info);
       const code = String(info.std_prl_cd || info.std_prk_mg_no || `prk-${Math.random()}`).trim();
 
@@ -563,7 +674,7 @@ export async function GET(request: NextRequest) {
 
       const finalTotalSpaces = (cleanedName.includes('벡스코') || cleanedName.includes('BEXCO'))
         ? 2400
-        : (totalSpaces > 0 ? totalSpaces : 100);
+        : (totalSpaces > 0 ? totalSpaces : 50);
 
       let currentParked: number | null = null;
       let availableSpaces = finalTotalSpaces;
