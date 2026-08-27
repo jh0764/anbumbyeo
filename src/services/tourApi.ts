@@ -7,8 +7,9 @@
 import { Festival, Parking, Region, CategoryType } from '@/types';
 import { calculateDistance, calculateRealCrowdStatus, formatWalkingDistanceText } from '@/lib/geoUtils';
 
-// 한국관광공사 TourAPI4.0 공식 엔드포인트 (CORS 지원, 브라우저 직접 호출 가능)
-const TOUR_API_BASE = 'https://apis.data.go.kr/B551011/KorService1';
+// Koreaconnect DPG 게이트웨이 — 브라우저에서 직접 호출 (헤더 인증)
+const TOUR_FESTIVAL_URL = 'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/searchFestival2';
+const TOUR_AREA_URL = 'https://api.koreaconnect.kr/01/1/2603101713597416530PDP/CULTR/B551011/KorService2/areaBasedList2';
 const API_KEY = '6015a42e4d4c4696a6d14f9cd9bdd663';
 
 // Koreaconnect 주차장 API (헤더 인증)
@@ -155,7 +156,7 @@ function parseFeeInfo(info: any, isPublic: boolean): string {
 // === API 호출 함수 ===
 
 /**
- * TourAPI에서 축제/명소 데이터 직접 조회 (브라우저 → apis.data.go.kr)
+ * TourAPI에서 축제/명소 데이터 직접 조회 (브라우저 → api.koreaconnect.kr DPG 게이트웨이)
  */
 async function fetchTourData(params: {
   category: CategoryType;
@@ -169,22 +170,34 @@ async function fetchTourData(params: {
   let url: string;
 
   if (category === '축제') {
-    url = `${TOUR_API_BASE}/searchFestival1?serviceKey=${encodeURIComponent(API_KEY)}&numOfRows=100&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&arrange=A&eventStartDate=${todayStr}&areaCode=${areaCode}`;
+    url = `${TOUR_FESTIVAL_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=${todayStr}&numOfRows=100&arrange=A&areaCode=${areaCode}`;
   } else {
     const contentTypeId = category === '문화시설' ? '14' : '12';
-    url = `${TOUR_API_BASE}/areaBasedList1?serviceKey=${encodeURIComponent(API_KEY)}&numOfRows=50&pageNo=1&MobileOS=ETC&MobileApp=anbumbyeo&_type=json&arrange=E&contentTypeId=${contentTypeId}&areaCode=${areaCode}`;
+    url = `${TOUR_AREA_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&numOfRows=50&arrange=E&contentTypeId=${contentTypeId}&areaCode=${areaCode}`;
   }
 
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(url, {
+      headers: { api_user_key_id: API_KEY, Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) {
       console.warn(`[TourAPI] HTTP ${res.status} for ${category}`);
       return [];
     }
-    const json = await res.json();
-    const items = json?.response?.body?.items?.item;
-    if (Array.isArray(items)) return items;
-    if (items) return [items];
+    const rawText = await res.text();
+    try {
+      const json = JSON.parse(rawText);
+      const items =
+        json?.response?.body?.items?.item ||
+        json?.items?.item ||
+        json?.body?.items?.item ||
+        json?.data;
+      if (Array.isArray(items)) return items;
+      if (items) return [items];
+    } catch {
+      console.warn('[TourAPI] JSON 파싱 실패');
+    }
     return [];
   } catch (err) {
     console.error('[TourAPI] Fetch error:', err);
