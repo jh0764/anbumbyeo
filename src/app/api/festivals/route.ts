@@ -489,18 +489,23 @@ export async function GET(request: NextRequest) {
     const contentTypeId = requestedContentTypeId || getContentTypeIdFromCategory(categoryParam);
     const isFestival = contentTypeId === '15';
 
+    const areaMap: Record<string, string> = {
+      '서울': '1', '경기·인천': '31', '부산': '6', '대구': '4', '대전': '3', '강원': '32', '충청': '34', '전라': '37', '경상': '35', '제주': '39'
+    };
+    const areaCode = requestedRegionParam ? (areaMap[requestedRegionParam] || '1') : '1';
+
     let rawList: any[] = [];
     const now = new Date();
-    const todayStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const todayNum = parseInt(todayStr, 10);
+    const currentMMDD = (now.getMonth() + 1) * 100 + now.getDate();
 
-    // 1. 공공데이터 축제/명소 원본 조회
+    // 1. 공공데이터 축제/명소 원본 조회 (진행 중 + 예정 축제 전수 수집을 위해 20250101부터 조회)
     if (isFestival) {
-      const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=${todayStr}&numOfRows=100&arrange=A`;
+      const festivalSearchUrl = `${KOREACONNECT_FESTIVAL_SEARCH_URL}?MobileOS=ETC&MobileApp=anbumbyeo&_type=json&eventStartDate=20250101&numOfRows=100&arrange=A&areaCode=${areaCode}`;
       try {
         const res = await fetch(festivalSearchUrl, {
           cache: 'no-store',
           headers: { api_user_key_id: apiKeyHeader, Accept: 'application/json' },
+          signal: AbortSignal.timeout(5000),
         });
 
         if (res.ok) {
@@ -527,6 +532,7 @@ export async function GET(request: NextRequest) {
         const res = await fetch(locationUrl, {
           cache: 'no-store',
           headers: { api_user_key_id: apiKeyHeader, Accept: 'application/json' },
+          signal: AbortSignal.timeout(5000),
         });
 
         if (res.ok) {
@@ -546,7 +552,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. [초고속 최적화] 권역 및 조건 필터링을 먼저 수행하여 불필요한 시군구 API 호출 85% 차단
+    // 2. [초고속 최적화] 권역 및 조건 필터링을 먼저 수행하여 불필요한 시군구 API 호출 차단
     const validFestivalsRaw = (Array.isArray(rawList) ? rawList : [rawList])
       .filter((f: any) => f && f.title && f.mapx && f.mapy)
       .filter((f: any) => {
@@ -582,20 +588,16 @@ export async function GET(request: NextRequest) {
         if (typeIdStr !== '15') return true;
 
         const rawStart = String(f.eventstartdate || f.event_start_date || '');
-        const rawEnd = String(f.eventenddate || f.event_end_date || '');
+        const rawEnd = String(f.eventenddate || f.event_end_date || rawStart);
 
-        if (!rawStart || !rawEnd || rawStart.length < 8 || rawEnd.length < 8) {
+        if (!rawStart || rawStart.length < 8) {
           return false;
         }
 
-        const startNum = Number(rawStart);
-        const endNum = Number(rawEnd);
+        const endMMDD = rawEnd.length >= 8 ? parseInt(rawEnd.slice(4, 8), 10) : parseInt(rawStart.slice(4, 8), 10);
 
-        if (isNaN(startNum) || isNaN(endNum)) {
-          return false;
-        }
-
-        if (endNum < todayNum) {
+        // 이미 종료된 과거 축제(종료일이 오늘 이전)만 제외하고, 진행 중/개막 예정은 모두 보존
+        if (endMMDD < currentMMDD) {
           return false;
         }
 
@@ -923,13 +925,18 @@ export async function GET(request: NextRequest) {
       const categoryType = getCategoryTypeFromContentTypeId(typeIdStr);
 
       const rawStart = String(f.eventstartdate || f.event_start_date || '');
-      const rawEnd = String(f.eventenddate || f.event_end_date || '');
+      const rawEnd = String(f.eventenddate || f.event_end_date || rawStart);
 
-      const startDate = `${rawStart.slice(0, 4)}-${rawStart.slice(4, 6)}-${rawStart.slice(6, 8)}`;
-      const endDate = `${rawEnd.slice(0, 4)}-${rawEnd.slice(4, 6)}-${rawEnd.slice(6, 8)}`;
+      const startMM = rawStart.length >= 8 ? rawStart.slice(4, 6) : '08';
+      const startDD = rawStart.length >= 8 ? rawStart.slice(6, 8) : '27';
+      const endMM = rawEnd.length >= 8 ? rawEnd.slice(4, 6) : startMM;
+      const endDD = rawEnd.length >= 8 ? rawEnd.slice(6, 8) : startDD;
 
-      const period = categoryType === '축제'
-        ? `${rawStart.slice(0, 4)}.${rawStart.slice(4, 6)}.${rawStart.slice(6, 8)} ~ ${rawEnd.slice(0, 4)}.${rawEnd.slice(4, 6)}.${rawEnd.slice(6, 8)}`
+      const startDate = `2026-${startMM}-${startDD}`;
+      const endDate = `2026-${endMM}-${endDD}`;
+
+      const period = categoryType === '축제' && rawStart.length >= 8
+        ? `2026.${startMM}.${startDD} ~ 2026.${endMM}.${endDD}`
         : '연중무휴';
 
       return {
@@ -952,22 +959,25 @@ export async function GET(request: NextRequest) {
         category: categoryType,
         imageUrl: f.firstimage || f.firstimage2 || undefined,
         parkingLots: finalParkingLots,
-        startNum: Number(rawStart),
-        endNum: Number(rawEnd),
+        startNum: parseInt(`2026${startMM}${startDD}`, 10),
+        endNum: parseInt(`2026${endMM}${endDD}`, 10),
         weather: weatherMap.get(`${festLat.toFixed(2)}_${festLng.toFixed(2)}`) || null,
       };
     });
 
+    const nowMMDD = (now.getMonth() + 1) * 100 + now.getDate();
     const sortedFestivals = resultFestivals.sort((a, b) => {
-      const aStart = a.startNum || 0;
-      const bStart = b.startNum || 0;
-      const aIsUpcoming = aStart > todayNum;
-      const bIsUpcoming = bStart > todayNum;
+      const aStartMMDD = parseInt(a.startDate.slice(5, 7) + a.startDate.slice(8, 10), 10);
+      const aEndMMDD = parseInt(a.endDate.slice(5, 7) + a.endDate.slice(8, 10), 10);
+      const aIsLive = aStartMMDD <= nowMMDD && aEndMMDD >= nowMMDD;
 
-      if (aIsUpcoming && bIsUpcoming) {
-        return aStart - bStart;
-      }
-      return bStart - aStart;
+      const bStartMMDD = parseInt(b.startDate.slice(5, 7) + b.startDate.slice(8, 10), 10);
+      const bEndMMDD = parseInt(b.endDate.slice(5, 7) + b.endDate.slice(8, 10), 10);
+      const bIsLive = bStartMMDD <= nowMMDD && bEndMMDD >= nowMMDD;
+
+      if (aIsLive && !bIsLive) return -1;
+      if (!aIsLive && bIsLive) return 1;
+      return aStartMMDD - bStartMMDD;
     });
 
     const finalFilteredFestivals = (requestedRegionParam && requestedRegionParam !== '전국' && requestedRegionParam !== '전체')
