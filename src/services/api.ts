@@ -1,5 +1,4 @@
 import { Festival, CategoryType, Region } from '@/types';
-import { fetchFestivalsClient } from '@/services/tourApi';
 
 interface FetchFestivalsParams {
   category?: CategoryType;
@@ -9,23 +8,24 @@ interface FetchFestivalsParams {
   radius?: number;
 }
 
-/**
- * 축제/명소 데이터 조회 — 브라우저에서 직접 한국 공공 API 호출
- *
- * 기존: page.tsx → api.ts → /api/festivals (Vercel 해외 서버) → 한국 API ❌ 차단
- * 변경: page.tsx → api.ts → 브라우저에서 직접 apis.data.go.kr 호출 ✅ 정상
- */
 export async function fetchFestivals(params: FetchFestivalsParams = {}): Promise<Festival[]> {
   try {
-    return await fetchFestivalsClient({
-      category: params.category,
-      region: params.region,
-      mapX: params.mapX,
-      mapY: params.mapY,
-      radius: params.radius,
-    });
+    const searchParams = new URLSearchParams();
+    if (params.category) searchParams.set('category', params.category);
+    if (params.region) searchParams.set('region', params.region);
+    if (params.mapX) searchParams.set('mapX', params.mapX.toString());
+    if (params.mapY) searchParams.set('mapY', params.mapY.toString());
+    if (params.radius) searchParams.set('radius', params.radius.toString());
+
+    const response = await fetch(`/api/festivals?${searchParams.toString()}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const json = await response.json();
+    return json.data || [];
   } catch (error) {
-    console.error('[fetchFestivals] Client-side fetch failed:', error);
+    console.error('Failed to fetch festivals:', error);
     return [];
   }
 }
